@@ -1,4 +1,11 @@
 # Minecraft Server Management Panel
+# Screenshots
+![Alt text](https://i.imgur.com/pEn60T4.png)
+![Alt text](https://i.imgur.com/FweSv4p.png)
+![Alt text](https://i.imgur.com/8H4ZN9j.png)
+![Alt text](https://i.imgur.com/SUohoXc.png)
+
+
 # Requirements
 ### Java (Version depends on what mc version you'll use)
 ### Git
