@@ -2,25 +2,22 @@ import os
 import subprocess
 import time
 import signal
-import socket # Keep for potential socket errors elsewhere, though RCON is removed
 import mimetypes
 import threading
 import shutil
 import json
 import sys
-import sqlite3 # Added for database
-from functools import wraps # Added for decorator
+import sqlite3
+from functools import wraps
 from pathlib import Path
 from flask import (
     Flask, render_template, request, redirect, url_for,
     jsonify, flash, abort, Response, send_from_directory, session, g # Added g
 )
-# RCON removed: from mcrcon import MCRcon
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash # Added for passwords
 
 # --- Configuration ---
-# !! IMPORTANT: Update these paths and settings !!
 try:
     # Assume MINECRAFT_SERVER_PATH is defined as before
     MINECRAFT_SERVER_PATH = Path("./Minecraft_Server").resolve(strict=True)
@@ -31,11 +28,8 @@ except FileNotFoundError:
     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     exit(1)
 
-# --- NEW: Settings File Path ---
 SETTINGS_FILE = MINECRAFT_SERVER_PATH / 'manager_settings.json'
-# --- END NEW ---
 
-# --- Default Settings (from your prompt) ---
 DEFAULT_SETTINGS = {
     "AUTOSTART_SERVER": False,
     "ENABLE_AUTO_RESTART_ON_CRASH": False,
@@ -43,10 +37,6 @@ DEFAULT_SETTINGS = {
     "SERVER_JAR_NAME": "server.jar",
     "JAVA_EXECUTABLE": "java",
     "JAVA_ARGS": ["-Xmx2G", "-Xms1G"],
-    # Note: Paths like LOG_FILE and DATABASE are tricky to manage via JSON
-    # as they depend on MINECRAFT_SERVER_PATH. We'll keep them as Python variables
-    # derived from MINECRAFT_SERVER_PATH for now, but list them here for the UI.
-    # The UI will display the *effective* path, but won't directly edit it via JSON.
     "LOG_FILE_DISPLAY": str(MINECRAFT_SERVER_PATH / "logs" / "latest.log"), # For display only
     "DATABASE_DISPLAY": str(MINECRAFT_SERVER_PATH / 'users.db'), # For display only
     "MAX_LOG_LINES": 50,
@@ -60,10 +50,6 @@ DEFAULT_SETTINGS = {
 
 DATABASE = MINECRAFT_SERVER_PATH / 'users.db' # Added database path
 MONITOR_INTERVAL_SECONDS = 5
-
-# --- Python Script Settings (Load from JSON or use defaults) ---
-# We'll load these *after* the Flask app is initialized, as Flask context might be needed.
-# Define placeholders for now.
 manager_settings = {}
 
 # --- Functions to Load/Save JSON Settings ---
@@ -106,19 +92,10 @@ def save_settings(settings_to_save):
 # --- Flask App Setup ---
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-# MAX_CONTENT_LENGTH should come from loaded settings later
-# app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-# ALLOW_REGISTRATION should come from loaded settings later
-# app.config['ALLOW_REGISTRATION'] = ALLOW_REGISTRATION
 
 # --- Load Manager Settings AFTER app initialization ---
-# Use app context to ensure things like logging work if needed inside load_settings
 with app.app_context():
     load_settings()
-
-# --- Apply loaded settings to Flask config and global variables ---
-# This needs careful handling as some settings might affect app behavior directly.
-# We update Flask config and Python variables used elsewhere based on loaded settings.
 
 # Update Flask config options
 app.config['ALLOW_REGISTRATION'] = manager_settings.get('ALLOW_REGISTRATION', DEFAULT_SETTINGS['ALLOW_REGISTRATION'])
@@ -129,24 +106,17 @@ except ValueError:
     print(f"Warning: Invalid MAX_UPLOAD_SIZE_MB value '{manager_settings.get('MAX_UPLOAD_SIZE_MB')}'. Using default.")
     app.config['MAX_CONTENT_LENGTH'] = DEFAULT_SETTINGS['MAX_UPLOAD_SIZE_MB'] * 1024 * 1024
 
-# Update Python variables used by the application logic
-# Be careful modifying global variables directly after startup.
-# Some might require an app restart to take effect anyway (like JAVA_ARGS).
-# For simplicity, we update them here, but acknowledge the restart need.
 AUTOSTART_SERVER = manager_settings.get('AUTOSTART_SERVER', DEFAULT_SETTINGS['AUTOSTART_SERVER'])
 ENABLE_AUTO_RESTART_ON_CRASH = manager_settings.get('ENABLE_AUTO_RESTART_ON_CRASH', DEFAULT_SETTINGS['ENABLE_AUTO_RESTART_ON_CRASH'])
 SERVER_JAR_NAME = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
 JAVA_EXECUTABLE = manager_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
-JAVA_ARGS = manager_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS']) # List type
+JAVA_ARGS = manager_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
 MAX_LOG_LINES = manager_settings.get('MAX_LOG_LINES', DEFAULT_SETTINGS['MAX_LOG_LINES'])
-# File/Upload/Edit Extensions (convert back to sets if needed by logic, or keep as lists)
 ALLOWED_VIEW_EXTENSIONS = set(manager_settings.get('ALLOWED_VIEW_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_VIEW_EXTENSIONS']))
 MAX_VIEW_FILE_SIZE_MB = manager_settings.get('MAX_VIEW_FILE_SIZE_MB', DEFAULT_SETTINGS['MAX_VIEW_FILE_SIZE_MB'])
 ALLOWED_UPLOAD_EXTENSIONS = set(manager_settings.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_UPLOAD_EXTENSIONS']))
 ALLOWED_EDIT_EXTENSIONS = set(manager_settings.get('ALLOWED_EDIT_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_EDIT_EXTENSIONS']))
 RESTART_DELAY_SECONDS = manager_settings.get('RESTART_DELAY_SECONDS', DEFAULT_SETTINGS['RESTART_DELAY_SECONDS'])
-
-# Log/DB paths remain derived from MINECRAFT_SERVER_PATH
 LOG_FILE = MINECRAFT_SERVER_PATH / "logs" / "latest.log"
 DATABASE = MINECRAFT_SERVER_PATH / 'users.db'
 
@@ -193,7 +163,6 @@ def try_start_server_on_launch():
             preexec_fn=preexec_fn  # Create new process group (Unix)
         )
         print(f"Autostart: Server process initiated with PID: {server_process.pid}")
-        # Optional: Add a small delay and check if it immediately crashed
         time.sleep(2) # Give it a moment to potentially fail
         if server_process.poll() is not None:
              # Try reading stderr if the process died quickly
@@ -286,7 +255,7 @@ def inject_user():
     """Inject user variable into templates"""
     return dict(user=g.user)
 
-# --- Helper Functions --- (Existing functions like is_server_running, etc.)
+# --- Helper Functions ---
 
 def is_server_running():
     """Checks if the server process is active (thread-safe)."""
@@ -294,14 +263,10 @@ def is_server_running():
     with server_management_lock:
         # Check if process exists and hasn't terminated
         is_running = server_process and server_process.poll() is None
-        # If poll() returns something, the process terminated. Nullify server_process
-        # but only if it wasn't an intended stop (monitor handles unintended stops).
         if server_process and not is_running and user_initiated_stop:
              print("is_server_running check: Detected server stopped (user initiated). Clearing process handle.")
              server_process = None # Clear handle if stopped and user intended it
              is_running = False
-        # If it stopped but wasn't user-initiated, the monitor thread will handle it.
-        # We still report it as not running for the UI.
     return is_running
 
 def get_latest_logs(num_lines=MAX_LOG_LINES):
@@ -339,7 +304,6 @@ def get_full_path(relative_subpath):
     if not is_safe_path(full_path):
         print(f"!!! SECURITY ALERT: Attempt to access unsafe path '{full_path}' derived from '{relative_subpath}'")
         return None
-    # Correction: Return the validated full_path, not construct it again
     return full_path # MINECRAFT_SERVER_PATH / Path(relative_subpath)
 
 def allowed_file(filename):
@@ -376,11 +340,10 @@ def dirname_filter(s):
     if s: return str(Path(s).parent)
     return ''
 
-# --- Authentication Routes --- Added/Modified Section
+# --- Authentication Routes ---
 
 @app.route('/register', methods=('GET', 'POST'))
 def register():
-    # --- ADD THIS CHECK ---
     if not app.config['ALLOW_REGISTRATION']:
         flash('User registration is currently disabled.', 'warning')
         return redirect(url_for('login'))
@@ -453,8 +416,6 @@ def login():
 
         flash(error, 'error')
 
-    # Render the login template for GET requests or if POST failed
-    # We need to create login.html later
     return render_template('login.html')
 
 
@@ -567,17 +528,12 @@ def parse_properties(file_path):
 
 def save_properties(file_path, settings_dict):
     """Saves settings back to a .properties file, attempting to preserve comments/order"""
-    # This is a simplified save function. It assumes settings_dict contains ONLY
-    # the key-value pairs that were editable and submitted. It reads the original
-    # file again to preserve comments and structure.
     original_settings_list = parse_properties(file_path)
     if not original_settings_list and file_path.exists():
          # If parsing failed but file exists, indicates read error
          raise IOError(f"Failed to read original properties file {file_path} for saving.")
     elif not file_path.exists():
          # Handle case where file might not exist yet (e.g., first setup)
-         # This basic version doesn't create it, assumes it exists.
-         # You could enhance this to create a default one if needed.
          pass # Or create a default structure
 
     try:
@@ -1627,6 +1583,4 @@ if __name__ == '__main__':
     print("Monitoring thread active.")
     # ---------------------------------------------
 
-    # It's generally recommended to run with debug=False in any shared environment
-    # Use 'waitress' or 'gunicorn' for a more production-ready server
     app.run(debug=False, host='127.0.0.1', port=8080) # Keep debug=True for development
