@@ -172,9 +172,7 @@ info "Copying msmp executable to /usr/local/bin/"
 sudo cp ./msmp /usr/local/bin/
 
 # Copy the temporary file to the target destination using sudo and set permissions
-run_sudo cp "${TMP_EXEC_FILE}" "${TARGET_BIN_DIR}/${MAIN_EXECUTABLE_NAME}" || error "Failed to copy executable."
 run_sudo chmod +x "${TARGET_BIN_DIR}/${MAIN_EXECUTABLE_NAME}" || error "Failed to set executable permission."
-rm -f "${TMP_EXEC_FILE}" # Clean up temp file
 
 # Create symlinks (remove first to ensure correctness)
 for link_name in "${LINK_NAMES[@]}"; do
