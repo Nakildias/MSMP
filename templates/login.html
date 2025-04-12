@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Minecraft Server Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    </head>
+<body>
+     <div class="auth-status">
+        {% if g.user %}
+            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+            <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a> |
+            <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+    </div>
+     <div class="theme-toggle">
+        <label class="switch">
+          <input type="checkbox" id="darkModeToggle">
+          <span class="slider round"></span>
+        </label>
+         <span class="theme-toggle-label">Dark Mode</span>
+    </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+    <div class="auth-form"> <h2>Login</h2>
+
+        {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
+        <div id="toast-messages" style="display: none;">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div data-category="{{ category }}" data-message="{{ message }}"></div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        <form method="post">
+            {# Include next URL if redirected here #}
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+            <div>
+                <label for="username">Username</label>
+                <input type="username" name="username" id="username" required> </div>
+            <div>
+                <label for="password">Password</label>
+                <input type="password" name="password" id="password" required> </div>
+            <button type="submit">Log In</button>
+        </form>
+        <div class="auth-links"> <p>Don't have an account? <a href="{{ url_for('register') }}">Register</a></p>
+        </div>
+    </div>
+
+    {# Ensure darkmode.js and the new toast.js are linked #}
+    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+</body>
+</html>

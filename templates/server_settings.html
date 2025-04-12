@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Settings</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Add some specific styles for this page */
+        .settings-form {
+            max-width: 1000px; margin: 20px auto; background-color: #fff; padding: 20px 30px; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .settings-form h1 { margin-bottom: 20px; text-align: center; }
+        .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; margin-bottom: 20px; }
+        .setting-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; }
+        .setting-item label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; word-wrap: break-word; }
+        .setting-item input[type="text"],
+        .setting-item input[type="number"],
+        .setting-item textarea { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+        .setting-item input[type="checkbox"] { width: auto; margin-right: 10px; transform: scale(1.2); vertical-align: middle;}
+        .setting-item textarea { min-height: 80px; font-family: monospace; }
+        .setting-item small { display: block; font-size: 0.85em; color: #666; margin-top: 5px; }
+        .setting-item .path-display { background-color: #e9ecef; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #555; word-wrap: break-word; }
+
+        .button-container { margin-top: 20px; text-align: center; padding-top: 20px; border-top: 1px solid #eee; }
+        .button-container.restart { margin-top: 30px; border-top: 1px solid #f5c6cb; } /* Add specific style for restart */
+        .button-container button { padding: 12px 25px; font-weight: bold; font-size: 1.1em; cursor: pointer; margin: 0 10px; }
+        .button-container button.save { background-color: #28a745; }
+        .button-container button.save:hover { background-color: #218838; }
+        .button-container button.restart-btn { background-color: #dc3545; } /* Use stop button color */
+        .button-container button.restart-btn:hover { background-color: #c82333; } /* Use stop button hover color */
+
+        /* Dark mode adjustments */
+        body.dark-mode .settings-form { background-color: #1e1e1e; border-color: #333; }
+        body.dark-mode .setting-item { border-color: #333; }
+        body.dark-mode .setting-item label { color: #ccc; }
+        body.dark-mode .setting-item input[type="text"],
+        body.dark-mode .setting-item input[type="number"],
+        body.dark-mode .setting-item textarea { background-color: #333; border-color: #555; color: #e0e0e0; }
+        body.dark-mode .setting-item input[type="checkbox"] { background-color: #333; border-color: #555; /* May need more specific styling */ }
+        body.dark-mode .setting-item small { color: #aaa; }
+        body.dark-mode .setting-item .path-display { background-color: #2a2a2a; border-color: #444; color: #bbb; }
+        body.dark-mode .button-container { border-top-color: #333; }
+        body.dark-mode .button-container.restart { border-top-color: #a02b36; }
+    </style>
+</head>
+<body>
+    <div class="auth-status">
+        {% if g.user %}
+            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+            <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a> |
+            <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+    </div>
+    <div class="theme-toggle">
+        <label class="switch">
+          <input type="checkbox" id="darkModeToggle">
+          <span class="slider round"></span>
+        </label>
+        <span class="theme-toggle-label">Dark Mode</span>
+    </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+    <div class="settings-form">
+        <h1>Panel Settings</h1>
+
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}">Back to Server Control</a>
+        </div>
+
+        {# Hidden container for JavaScript to read flashed messages #}
+        <div id="toast-messages" style="display: none;">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div data-category="{{ category }}" data-message="{{ message }}"></div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        <p class="warning">Some settings might require restarting the "Panel" to take effect.</p>
+
+        <form method="post" action="{{ url_for('server_settings') }}">
+            <div class="settings-grid">
+
+                <div class="setting-item">
+                    <label for="setting-AUTOSTART_SERVER">
+                        <input type="checkbox" id="setting-AUTOSTART_SERVER" name="AUTOSTART_SERVER" {% if settings.AUTOSTART_SERVER %}checked{% endif %}>
+                        AUTOSTART_SERVER (Minecraft Server)
+                    </label>
+                    <small>Automatically start the Minecraft server when the manager starts.</small>
+                </div>
+                <div class="setting-item">
+                    <label for="setting-ENABLE_AUTO_RESTART_ON_CRASH">
+                        <input type="checkbox" id="setting-ENABLE_AUTO_RESTART_ON_CRASH" name="ENABLE_AUTO_RESTART_ON_CRASH" {% if settings.ENABLE_AUTO_RESTART_ON_CRASH %}checked{% endif %}>
+                        ENABLE_AUTO_RESTART_ON_CRASH (Minecraft Server)
+                    </label>
+                    <small>Automatically restart the Minecraft server if it crashes unexpectedly.</small>
+                </div>
+                <div class="setting-item">
+                    <label for="setting-ALLOW_REGISTRATION">
+                        <input type="checkbox" id="setting-ALLOW_REGISTRATION" name="ALLOW_REGISTRATION" {% if settings.ALLOW_REGISTRATION %}checked{% endif %}>
+                        ALLOW_REGISTRATION
+                    </label>
+                    <small>Allow new users to register through the web interface.</small>
+                </div>
+
+                <div class="setting-item">
+                    <label for="setting-SERVER_JAR_NAME">SERVER_JAR_NAME</label>
+                    <input type="text" id="setting-SERVER_JAR_NAME" name="SERVER_JAR_NAME" value="{{ settings.SERVER_JAR_NAME }}">
+                    <small>The exact filename of your server JAR file (e.g., server.jar, paper.jar).</small>
+                </div>
+                <div class="setting-item">
+                    <label for="setting-JAVA_EXECUTABLE">JAVA_EXECUTABLE</label>
+                    <input type="text" id="setting-JAVA_EXECUTABLE" name="JAVA_EXECUTABLE" value="{{ settings.JAVA_EXECUTABLE }}">
+                    <small>Command or path to the Java executable (e.g., 'java', '/usr/bin/java').</small>
+                </div>
+
+                <div class="setting-item">
+                    <label for="setting-MAX_LOG_LINES">MAX_LOG_LINES</label>
+                    <input type="number" id="setting-MAX_LOG_LINES" name="MAX_LOG_LINES" value="{{ settings.MAX_LOG_LINES }}" min="10">
+                    <small>Maximum number of log lines to display on the main page.</small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-MAX_VIEW_FILE_SIZE_MB">MAX_VIEW_FILE_SIZE_MB</label>
+                    <input type="number" id="setting-MAX_VIEW_FILE_SIZE_MB" name="MAX_VIEW_FILE_SIZE_MB" value="{{ settings.MAX_VIEW_FILE_SIZE_MB }}" min="1">
+                    <small>Maximum file size (in MB) allowed for viewing/editing in the browser.</small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-MAX_UPLOAD_SIZE_MB">MAX_UPLOAD_SIZE_MB</label>
+                    <input type="number" id="setting-MAX_UPLOAD_SIZE_MB" name="MAX_UPLOAD_SIZE_MB" value="{{ settings.MAX_UPLOAD_SIZE_MB }}" min="1">
+                    <small>Maximum file size (in MB) allowed for uploads.</small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-RESTART_DELAY_SECONDS">RESTART_DELAY_SECONDS (Minecraft Server)</label>
+                    <input type="number" id="setting-RESTART_DELAY_SECONDS" name="RESTART_DELAY_SECONDS" value="{{ settings.RESTART_DELAY_SECONDS }}" min="0">
+                    <small>Delay (in seconds) before attempting automatic restart after a crash.</small>
+                </div>
+
+                <div class="setting-item">
+                    <label for="setting-JAVA_ARGS">JAVA_ARGS</label>
+                    <textarea id="setting-JAVA_ARGS" name="JAVA_ARGS">{{ settings.JAVA_ARGS | join(',') }}</textarea>
+                    <small>Java arguments (e.g., -Xmx, -Xms), comma-separated. Example: <code>-Xmx4G,-Xms1G,-XX:+UseG1GC</code></small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-ALLOWED_VIEW_EXTENSIONS">ALLOWED_VIEW_EXTENSIONS</label>
+                    <textarea id="setting-ALLOWED_VIEW_EXTENSIONS" name="ALLOWED_VIEW_EXTENSIONS">{{ settings.ALLOWED_VIEW_EXTENSIONS | join(',') }}</textarea>
+                    <small>File extensions allowed for viewing (comma-separated, include leading dot). Example: <code>.txt,.log,.yml,.json</code></small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-ALLOWED_UPLOAD_EXTENSIONS">ALLOWED_UPLOAD_EXTENSIONS</label>
+                    <textarea id="setting-ALLOWED_UPLOAD_EXTENSIONS" name="ALLOWED_UPLOAD_EXTENSIONS">{{ settings.ALLOWED_UPLOAD_EXTENSIONS | join(',') }}</textarea>
+                    <small>File extensions allowed for uploading (comma-separated, no dot). Example: <code>jar,zip,yml,json,schem</code></small>
+                </div>
+                 <div class="setting-item">
+                    <label for="setting-ALLOWED_EDIT_EXTENSIONS">ALLOWED_EDIT_EXTENSIONS</label>
+                    <textarea id="setting-ALLOWED_EDIT_EXTENSIONS" name="ALLOWED_EDIT_EXTENSIONS">{{ settings.ALLOWED_EDIT_EXTENSIONS | join(',') }}</textarea>
+                    <small>File extensions allowed for editing (comma-separated, include leading dot). Example: <code>.txt,.yml,.json,.properties</code></small>
+                </div>
+
+                <div class="setting-item">
+                    <label>LOG_FILE (Effective Path)</label>
+                    <div class="path-display">{{ settings.LOG_FILE_DISPLAY }}</div>
+                    <small>Path to the server's log file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
+                </div>
+                <div class="setting-item">
+                    <label>DATABASE (Effective Path)</label>
+                    <div class="path-display">{{ settings.DATABASE_DISPLAY }}</div>
+                    <small>Path to the user database file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
+                </div>
+
+            </div> <div class="button-container">
+                <button type="submit" class="save">Save</button>
+            </div>
+        </form>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+</body>
+</html>

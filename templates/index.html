@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    </head>
+<body>
+    <div class="auth-status"> {% if g.user %}
+            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+            <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a> |
+            <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+    </div>
+    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
+          <input type="checkbox" id="darkModeToggle">
+          <span class="slider round"></span>
+        </label>
+        <span class="theme-toggle-label">Dark Mode</span>
+    </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+
+    <div id="toast-messages" style="display: none;">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div data-category="{{ category }}" data-message="{{ message }}"></div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <div class="status-section"> <h1>Minecraft Server Management Panel</h1> <div> <div class="nav-links"> <a href="{{ url_for('files') }}">File Manager</a> <a href="{{ url_for('server_properties') }}">Server Properties</a><a href="{{ url_for('server_settings') }}">Panel Settings</a>
+        </div>
+        <div class="controls">
+            <form action="{{ url_for('start_server') }}" method="post" style="display: inline;">
+                <button type="submit" id="start-button" {% if status == 'Running' %}disabled{% endif %}>Start Server</button>
+            </form>
+            <form action="{{ url_for('stop_server') }}" method="post" style="display: inline;">
+                <button type="submit" id="stop-button" {% if status == 'Stopped' %}disabled{% endif %} class="stop">Stop Server</button>
+            </form>
+        </div>
+    </div>
+
+        <pre id="server-logs"><code>{% for line in logs %}{{ line }}{% endfor %}</code></pre>
+                <form action="{{ url_for('send_command') }}" method="post">
+            <input type="text" name="command" id="command-input" placeholder="e.g., say Hello world!" required {% if status == 'Stopped' %}disabled{% endif %}>
+          <!--  <button type="submit" id="send-button" {% if status == 'Stopped' %}disabled{% endif %}>Send</button> -->
+        </form>
+    </div>
+
+    <script>
+        // Basic Javascript for status/log refresh (Keep existing script)
+        const statusElement = document.getElementById('server-status');
+        const startButton = document.getElementById('start-button');
+        const stopButton = document.getElementById('stop-button');
+        const commandInput = document.getElementById('command-input');
+        const sendButton = document.getElementById('send-button');
+        const logsElement = document.getElementById('server-logs').querySelector('code');
+        const commandForm = document.getElementById('command-form'); // Use ID selector
+
+        console.log("Script loaded. Command form found:", commandForm ? 'Yes' : 'No');
+
+        function updateStatus() {
+            fetch("{{ url_for('status_api') }}")
+                .then(response => response.json())
+                .then(data => {
+                    const currentStatus = statusElement.textContent;
+                    if (currentStatus !== data.status) {
+                         statusElement.textContent = data.status;
+                         const isRunning = data.status === 'Running';
+                         startButton.disabled = isRunning;
+                         stopButton.disabled = !isRunning;
+                         if(commandInput) commandInput.disabled = !isRunning;
+                         if(sendButton) sendButton.disabled = !isRunning;
+                         // Update class for color
+                         statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+                    }
+                })
+                .catch(error => console.error('Error fetching status:', error));
+        }
+
+        let isFetchingLogs = false;
+        function updateLogs() {
+            if (isFetchingLogs) return;
+            isFetchingLogs = true;
+
+            fetch("{{ url_for('logs_api') }}")
+                .then(response => {
+                    if (!response.ok) {
+                         if (response.status === 401) {
+                             console.warn("Log API access denied. Redirecting to login.");
+                         }
+                         throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                 })
+                .then(data => {
+                    const newLogContent = data.logs.join('');
+                    if (logsElement && logsElement.textContent !== newLogContent) {
+                        logsElement.textContent = newLogContent;
+                        if (logsElement.parentElement) {
+                           logsElement.parentElement.scrollTop = logsElement.parentElement.scrollHeight;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                })
+                .finally(() => {
+                    isFetchingLogs = false;
+                });
+        }
+
+        // Initial calls
+        updateStatus();
+        updateLogs();
+
+        // Intervals
+        setInterval(updateStatus, 5000);
+        setInterval(updateLogs, 2000);
+
+        // Command form submission logic
+         if (commandForm) {
+             commandForm.addEventListener('submit', function(event) {
+                 console.log("Command form submitted.");
+                 event.preventDefault();
+
+                 const currentStatus = statusElement.textContent;
+                 if (currentStatus !== 'Running') {
+                     console.warn("Attempted to send command while server is not running.");
+                     // Consider using toast here
+                     alert("Cannot send command: Server is not running.");
+                     return;
+                 }
+
+                 if (sendButton) sendButton.disabled = true;
+                 if (commandInput) commandInput.disabled = true;
+
+                 const formData = new FormData(commandForm);
+                 const commandValue = formData.get('command');
+                 console.log(`Preparing to send command: ${commandValue}`);
+
+                 fetch(commandForm.action, {
+                     method: 'POST',
+                     body: formData,
+                 })
+                 .then(response => {
+                      console.log('Fetch response status:', response.status);
+                      if (!response.ok) {
+                           console.error(`Error sending command: ${response.statusText}`);
+                           // Consider using toast here
+                           throw new Error(`Command failed with status ${response.status}`);
+                      }
+                      if (commandInput) commandInput.value = '';
+                      setTimeout(updateLogs, 250);
+                 })
+                 .catch(error => {
+                     console.error('Error sending command via fetch:', error);
+                      // Consider using toast here
+                     if (logsElement) logsElement.textContent += "\nError sending command.";
+                      const isRunning = statusElement.textContent === 'Running';
+                      if (commandInput) commandInput.disabled = !isRunning;
+                      if (sendButton) sendButton.disabled = !isRunning;
+                 })
+                 .finally(() => {
+                      const isRunning = statusElement.textContent === 'Running';
+                      console.log(`Command fetch finally block. Server running: ${isRunning}`);
+                      if (commandInput) commandInput.disabled = !isRunning;
+                      if (sendButton) sendButton.disabled = !isRunning;
+                 });
+             });
+         } else {
+              console.error("Command form element not found!");
+         }
+
+    </script>
+    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+</body>
+</html>

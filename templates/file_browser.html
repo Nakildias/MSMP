@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Manager - {{ current_path or 'Server Root' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+     </head>
+<body>
+     <div class="auth-status"> {% if g.user %}
+             <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+             <a href="{{ url_for('logout') }}">Logout</a>
+         {% else %}
+             <a href="{{ url_for('login') }}">Login</a> |
+             <a href="{{ url_for('register') }}">Register</a>
+         {% endif %}
+     </div>
+    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
+          <input type="checkbox" id="darkModeToggle">
+          <span class="slider round"></span>
+        </label>
+        <span class="theme-toggle-label">Dark Mode</span>
+    </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+    </div>
+
+    {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
+    <div id="toast-messages" style="display: none;">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div data-category="{{ category }}" data-message="{{ message }}"></div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <div class="file-manager"> <h1>File Manager</h1> <div class="nav-links"> <a href="{{ url_for('index') }}">Back to Server Control</a> </div> <div class="breadcrumbs"> {% for crumb in breadcrumbs %}
+                {% if not loop.last %}
+                    <a href="{{ url_for('files', subpath=crumb.path) }}">{{ crumb.name }}</a> /
+                {% else %}
+                    <span>{{ crumb.name }}</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="upload-section"> <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
+                <input type="hidden" name="target_dir" value="{{ current_path }}">
+                <label for="file_upload">Upload File:</label>
+                <input type="file" name="file" id="file_upload" required>
+                <button type="submit" class="action-button upload">Upload</button> <small>(Max: {{ config.MAX_CONTENT_LENGTH | filesizeformat if config.MAX_CONTENT_LENGTH else 'N/A' }}, Allowed: {{ config.ALLOWED_UPLOAD_EXTENSIONS | join(', ') }})</small>
+            </form>
+        </div>
+
+        <div class="create-actions"> {# New Folder Form #}
+             <form action="{{ url_for('create_folder') }}" method="post" style="display: inline-block;">
+                 <input type="hidden" name="target_dir" value="{{ current_path }}">
+                 <input type="text" name="new_name" id="new_folder_name" placeholder="Folder Name" required size="20">
+                 <button type="submit" class="action-button create-folder">Create Folder</button> </form>
+             {# New File Form #}
+             <form action="{{ url_for('create_file') }}" method="post" style="display: inline-block;">
+                 <input type="hidden" name="target_dir" value="{{ current_path }}">
+                 <input type="text" name="new_name" id="new_file_name" placeholder="File Name (e.g. config.yml)" required size="25">
+                 <button type="submit" class="action-button create-file">Create File</button> </form>
+        </div>
+
+        <div class="clipboard-actions"> {% if clipboard_item %}
+                <span>Clipboard: {{ clipboard_item.action | title }} '{{ clipboard_item.path | basename }}'</span>
+                <form action="{{ url_for('clipboard_paste') }}" method="post" style="display: inline;">
+                    <input type="hidden" name="target_dir" value="{{ current_path }}">
+                    <button type="submit" class="action-button paste">Paste Here</button> </form>
+                <form action="{{ url_for('clipboard_clear') }}" method="post" style="display: inline;">
+                    <button type="submit" class="action-button clear-clip">Clear Clipboard</button> </form>
+            {% else %}
+                 <span>Clipboard is empty.</span>
+            {% endif %}
+        </div>
+
+        <table class="file-list"> <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                 {% if parent_path is not none %}
+                <tr>
+                    <td colspan="4">
+                        <a href="{{ url_for('files', subpath=parent_path) }}" class="parent-dir">⬆️ Parent Directory</a> </td>
+                </tr>
+                {% endif %}
+
+                {% for item in items %}
+                    <tr>
+                        <td>
+                            {% if item.is_dir %}
+                                📁 <a href="{{ url_for('files', subpath=item.path) }}">{{ item.name }}</a>
+                            {% elif item.is_file %}
+                                {% if item.is_viewable or item.is_editable %}
+                                    📄 <a href="{{ url_for('view_file', filepath=item.path) }}" title="{{ 'Edit File' if item.is_editable else 'View File' }}">{{ item.name }}</a>
+                                    {% if item.is_editable %}<span class="note">(Editable)</span>{% endif %} {% else %}
+                                    📄 {{ item.name }} <span class="note">(Binary/Not Viewable)</span> {% endif %}
+                            {% else %}
+                               ❓ {{ item.name }}
+                            {% endif %}
+                            <form action="{{ url_for('rename_item') }}" method="post" class="rename-form" style="display: none;"> <input type="hidden" name="original_path" value="{{ item.path }}">
+                                <input type="text" name="new_name" value="{{ item.name }}" required class="rename-input"> <button type="submit" class="action-button rename-confirm">✔️</button> <button type="button" class="action-button rename-cancel">❌</button> </form>
+                        </td>
+                        <td>{{ 'Directory' if item.is_dir else 'File' if item.is_file else 'Unknown' }}</td>
+                        <td>
+                            {% if item.is_file and item.size != -1 %}
+                                {{ item.size | filesizeformat }}
+                            {% elif item.is_file and item.size == -1 %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td class="actions"> <span class="item-name-display" style="display: none;">{{ item.name }}</span>
+                            <div class="action-buttons"> {% if item.is_file %}
+                                <a href="{{ url_for('download_file', filepath=item.path) }}" class="action-button download" title="Download">⬇️</a> {% endif %}
+                                <button type="button" class="action-button rename" title="Rename">✏️</button> <form action="{{ url_for('clipboard_copy') }}" method="post" style="display: inline;">
+                                    <input type="hidden" name="path" value="{{ item.path }}">
+                                    <button type="submit" class="action-button copy" title="Copy">📋</button> </form>
+                                <form action="{{ url_for('clipboard_cut') }}" method="post" style="display: inline;">
+                                    <input type="hidden" name="path" value="{{ item.path }}">
+                                    <button type="submit" class="action-button cut" title="Cut">✂️</button> </form>
+                                <form action="{{ url_for('delete_item') }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete \'{{ item.name }}\'? This action cannot be undone!');">
+                                    <input type="hidden" name="path" value="{{ item.path }}">
+                                    <button type="submit" class="action-button delete" title="Delete">🗑️</button> </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="4"><em>Directory is empty or inaccessible.</em></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+         <p class="warning"> Warning: File operations can be dangerous. Ensure proper password is set and authentification is turned off.
+        </p>
+    </div>
+
+    <script>
+        // Inline JavaScript for rename functionality (keep existing)
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.file-list .rename').forEach(button => {
+                button.addEventListener('click', function() {
+                    const row = this.closest('tr');
+                    const nameCell = row.querySelector('td:first-child');
+                    const actionCell = row.querySelector('td.actions');
+                    const nameLink = nameCell.querySelector('a, span:not(.note)');
+                    if(nameLink) nameLink.style.display = 'none';
+                    const nameNote = nameCell.querySelector('span.note');
+                    if (nameNote) nameNote.style.display = 'none';
+                    actionCell.querySelector('.action-buttons').style.display = 'none';
+                    nameCell.querySelector('.rename-form').style.display = 'inline-block';
+                    nameCell.querySelector('.rename-input').focus();
+                    nameCell.querySelector('.rename-input').select();
+                });
+            });
+
+            document.querySelectorAll('.file-list .rename-cancel').forEach(button => {
+                button.addEventListener('click', function() {
+                     const row = this.closest('tr');
+                     const nameCell = row.querySelector('td:first-child');
+                     const actionCell = row.querySelector('td.actions');
+                     const nameLink = nameCell.querySelector('a, span:not(.note)');
+                     if(nameLink) nameLink.style.display = 'inline';
+                    const nameNote = nameCell.querySelector('span.note');
+                    if (nameNote) nameNote.style.display = 'inline';
+                     actionCell.querySelector('.action-buttons').style.display = 'inline-block';
+                     nameCell.querySelector('.rename-form').style.display = 'none';
+                });
+            });
+
+            document.querySelectorAll('.clear-clip').forEach(button => {
+                button.addEventListener('click', function(event) {
+                    console.log('Clear clipboard button clicked - submitting form.');
+                });
+            });
+        });
+    </script>
+<script>
+    // Select the status element
+    const statusElement = document.getElementById('server-status');
+
+    // Function to fetch and update status
+    function updateStatus() {
+        // Ensure the element exists before fetching
+        if (!statusElement) {
+            console.warn('Status element not found on this page.');
+            return;
+        }
+
+        fetch("{{ url_for('status_api') }}") // Make sure the API endpoint is correct
+            .then(response => {
+                if (!response.ok) {
+                    // Handle potential errors like 401 Unauthorized if session expired
+                    if (response.status === 401) {
+                        console.warn("Status API access denied. User might be logged out.");
+                        // Optional: redirect to login or show a message
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const currentStatusText = statusElement.textContent;
+                // Only update if the status has actually changed
+                if (currentStatusText !== data.status) {
+                    statusElement.textContent = data.status;
+                    const isRunning = data.status === 'Running';
+                    // Update class for styling (e.g., green/red background)
+                    statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+
+                    // If you ADDED start/stop buttons to these pages,
+                    // you would update their disabled state here too.
+                    // e.g., const startBtn = document.getElementById('start-button');
+                    //      if(startBtn) startBtn.disabled = isRunning;
+                }
+            })
+            .catch(error => console.error('Error fetching status:', error));
+    }
+
+    // Initial call to set status when page loads
+    updateStatus();
+
+    // Set interval to check status every 5 seconds (5000 milliseconds)
+    setInterval(updateStatus, 5000);
+
+    // --- Include other scripts like darkmode.js and toast.js ---
+    // Ensure these lines are also present, as they are in the originals:
+    // <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+
+</script>
+<script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+<script src="{{ url_for('static', filename='toast.js') }}"></script>
+</body>
+</html>

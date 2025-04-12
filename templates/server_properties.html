@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Server Properties</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    </head>
+<body>
+    <div class="auth-status">
+        {% if g.user %}
+            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+            <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a> |
+            <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+    </div>
+    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
+          <input type="checkbox" id="darkModeToggle">
+          <span class="slider round"></span>
+        </label>
+        <span class="theme-toggle-label">Dark Mode</span>
+    </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+    <div class="properties-form"> <h1>Server Properties</h1>
+
+        <div class="nav-links"> <a href="{{ url_for('index') }}">Back to Server Control</a>
+        </div>
+
+        {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
+        <div id="toast-messages" style="display: none;">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div data-category="{{ category }}" data-message="{{ message }}"></div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        <form method="post" action="{{ url_for('server_properties') }}">
+
+             <div>
+             </div>
+             {% if not settings_list %}
+                 <p><em>Could not load settings or the properties file is empty/missing.</em></p>
+            {% else %}
+                <div class="settings-grid"> {% for item in settings_list %}
+                        {% if item.type == 'setting' %}
+                            <div class="setting-item"> <label for="setting-{{ item.key }}">{{ item.key }}</label> {# Specific input types based on key or value type #}
+                                {% if item.key == 'difficulty' %}
+                                    <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="peaceful" {% if item.value == 'peaceful' %}selected{% endif %}>peaceful</option>
+                                        <option value="easy" {% if item.value == 'easy' %}selected{% endif %}>easy</option>
+                                        <option value="normal" {% if item.value == 'normal' %}selected{% endif %}>normal</option>
+                                        <option value="hard" {% if item.value == 'hard' %}selected{% endif %}>hard</option>
+                                    </select>
+                                {% elif item.key == 'gamemode' %}
+                                     <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="survival" {% if item.value == 'survival' %}selected{% endif %}>survival</option>
+                                        <option value="creative" {% if item.value == 'creative' %}selected{% endif %}>creative</option>
+                                        <option value="adventure" {% if item.value == 'adventure' %}selected{% endif %}>adventure</option>
+                                        <option value="spectator" {% if item.value == 'spectator' %}selected{% endif %}>spectator</option>
+                                    </select>
+                                {% elif item.value.lower() == 'true' or item.value.lower() == 'false' %}
+                                    <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="true" {% if item.value.lower() == 'true' %}selected{% endif %}>true</option>
+                                        <option value="false" {% if item.value.lower() == 'false' %}selected{% endif %}>false</option>
+                                    </select>
+                                {% else %}
+                                    {# Default: Render a text input #}
+                                    <input type="text" id="setting-{{ item.key }}"
+                                           name="{{ item.key }}"
+                                           value="{{ item.value }}">
+                                {% endif %}
+                                {# You could add descriptions here based on known keys #}
+                            </div>
+                         {% elif item.type == 'comment' %}
+                         {# --- Comment lines are intentionally not displayed --- #}
+                         {# <div class="comment-line">{{ item.raw.strip() }}</div> #} {# --- End of hidden comment line display --- #}
+                        {% elif item.type == 'empty' %}
+                             <div class="empty-line"></div> {% else %} {# 'unknown' type #}
+                             <div class="comment-line"><em>{{ item.raw.strip() }}</em></div> {# Display unknowns like comments #}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %} {# End check for settings_list #}
+
+            <div class="save-button-container"> <button type="submit">Save</button>
+            </div>
+    </div>
+<script>
+    // Select the status element
+    const statusElement = document.getElementById('server-status');
+
+    // Function to fetch and update status
+    function updateStatus() {
+        // Ensure the element exists before fetching
+        if (!statusElement) {
+            console.warn('Status element not found on this page.');
+            return;
+        }
+
+        fetch("{{ url_for('status_api') }}") // Make sure the API endpoint is correct
+            .then(response => {
+                if (!response.ok) {
+                    // Handle potential errors like 401 Unauthorized if session expired
+                    if (response.status === 401) {
+                        console.warn("Status API access denied. User might be logged out.");
+                        // Optional: redirect to login or show a message
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const currentStatusText = statusElement.textContent;
+                // Only update if the status has actually changed
+                if (currentStatusText !== data.status) {
+                    statusElement.textContent = data.status;
+                    const isRunning = data.status === 'Running';
+                    // Update class for styling (e.g., green/red background)
+                    statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+
+                    // If you ADDED start/stop buttons to these pages,
+                    // you would update their disabled state here too.
+                    // e.g., const startBtn = document.getElementById('start-button');
+                    //      if(startBtn) startBtn.disabled = isRunning;
+                }
+            })
+            .catch(error => console.error('Error fetching status:', error));
+    }
+
+    // Initial call to set status when page loads
+    updateStatus();
+
+    // Set interval to check status every 5 seconds (5000 milliseconds)
+    setInterval(updateStatus, 5000);
+
+    // --- Include other scripts like darkmode.js and toast.js ---
+    // Ensure these lines are also present, as they are in the originals:
+    // <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+
+</script>
+    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script src="{{ url_for('static', filename='toast.js') }}"></script> {# <-- ADD THIS LINE #}
+</body>
+</html>

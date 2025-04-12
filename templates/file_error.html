@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser Error</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+     </head>
+<body>
+     <div class="auth-status"> {% if g.user %}
+             <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
+             <a href="{{ url_for('logout') }}">Logout</a>
+         {% else %}
+             <a href="{{ url_for('login') }}">Login</a> |
+             <a href="{{ url_for('register') }}">Register</a>
+         {% endif %}
+     </div>
+     <div class="theme-toggle"> <label class="switch">
+           <input type="checkbox" id="darkModeToggle">
+           <span class="slider round"></span>
+         </label>
+          <span class="theme-toggle-label">Dark Mode</span>
+     </div>
+
+    {# Container where toasts will be dynamically added by JavaScript #}
+    <div id="toast-container"></div>
+
+    <h1>File Browser Error</h1> <div class="nav-links" style="text-align: center;"> <a href="{{ url_for('index') }}">Back to Server Control</a> |
+         <a href="{{ url_for('files') }}">Back to File Browser Root</a>
+    </div>
+
+    {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
+    {# Assumes the route rendering this template calls flash() with the error message #}
+    <div id="toast-messages" style="display: none;">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div data-category="{{ category }}" data-message="{{ message }}"></div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <div class="error-container"> {# Content is now handled by the toast mechanism #}
+        <h2>Error Occurred</h2> <p>An error was detected. Please check the notification for details.</p> {# Generic placeholder message #}
+        <p>Also, check the application configuration (especially `MINECRAFT_SERVER_PATH` in `app.py`) and the file system permissions for the user running the application.</p>
+    </div>
+
+<script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+<script src="{{ url_for('static', filename='toast.js') }}"></script>
+</body>
+</html>
