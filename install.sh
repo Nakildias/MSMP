@@ -215,7 +215,6 @@ if [[ -x "${TARGET_BIN_DIR}/${MAIN_EXECUTABLE_NAME}" ]]; then
         warn " Please ensure '${TARGET_BIN_DIR}' is in your PATH environment variable."
         warn " You might need to restart your shell, log out and back in, or manually add it."
         warn " Example (add to ~/.bashrc or ~/.zshrc): export PATH=\"${TARGET_BIN_DIR}:\$PATH\""
-        warn " IMPORTANT: Remember the CWD requirement for the Minecraft Server directory!"
         warn "-------------------------------------------"
     fi
 else
