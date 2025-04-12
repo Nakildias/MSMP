@@ -1,0 +1,15 @@
+#!/usr/bin/bash
+
+# --- Configuration ---
+APP_NAME="MSMP"
+# Use the same VENV path as the installer script
+VENV_DIR="$HOME/.local/share/${APP_NAME}"
+VENV_PYTHON="${VENV_DIR}/bin/python"
+
+cd $VENV_DIR
+
+mkdir $VENV_DIR/Minecraft_Server
+
+source $VENV_DIR/bin/activate
+
+python $VENV_DIR/app/app.py
