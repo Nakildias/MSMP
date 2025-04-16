@@ -173,18 +173,6 @@
                     <div class="path-display">{{ settings.DATABASE_DISPLAY }}</div>
                     <small>Path to the user database file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
                 </div>
-                <div class="setting-item">
-                    <label for="setting-SERVER_EXECUTABLE_TYPE">SERVER_EXECUTABLE_TYPE</label>
-                    <select id="setting-SERVER_EXECUTABLE_TYPE" name="SERVER_EXECUTABLE_TYPE">
-                        <option value="jar" {% if settings.SERVER_EXECUTABLE_TYPE == 'jar' %}selected{% endif %}>JAR (Java Archive)</option>
-                        <option value="sh" {% if settings.SERVER_EXECUTABLE_TYPE == 'sh' %}selected{% endif %}>SH (Shell Script)</option>
-                    </select>
-                    <small>Choose how to execute the server file (JAR or Shell Script).</small>
-                </div>
-
-                <div class="setting-item">
-                    <label for="setting-SERVER_JAR_NAME">Server File Name (JAR or SH)</label> <input type="text" id="setting-SERVER_JAR_NAME" name="SERVER_JAR_NAME" value="{{ settings.SERVER_JAR_NAME }}">
-                    <small>The exact filename of your server executable (e.g., server.jar, paper.jar, start.sh).</small> </div>
 
             </div> <div class="button-container">
                 <button type="submit" class="save">Save</button>
