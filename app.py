@@ -135,60 +135,40 @@ def get_db():
         g.db.row_factory = sqlite3.Row # Return rows as dict-like objects
     return g.db
 
-# --- Function for Server Autostart ---  <<< ADD THIS FUNCTION
+# --- Function for Server Autostart ---
 def try_start_server_on_launch():
-    """Attempts to start the Minecraft server if not already running."""
-    global server_process
+    """
+    Attempts to start the Minecraft server on launch if AUTOSTART_SERVER is true,
+    respecting the START_MODE setting by calling _start_server_process.
+    """
+    # Ensure globals holding settings are accessible
+    # Note: These globals should be loaded from manager_settings *before* this function is called
+    global server_process, AUTOSTART_SERVER, START_MODE
+
+    # 1. Check if autostart is enabled in settings
+    if not AUTOSTART_SERVER:
+        print("Autostart Skipped: AUTOSTART_SERVER setting is disabled.")
+        return # Exit if autostart is not enabled
+
+    # 2. Check if the server process seems to be running already
+    # Use the thread-safe helper function
     if is_server_running():
         print("Autostart Skipped: Server process appears to be running already.")
-        return # Don't try to start if it's somehow already running
+        return # Exit if server is already running
 
-    server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
-    if not server_jar_path.is_file():
-        print(f"Autostart Error: Server JAR not found at: {server_jar_path}")
-        return
+    # 3. Log the attempt and the mode being used
+    print(f"Autostart: Attempting server launch using mode: {START_MODE}")
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
-    try:
-        print(f"Autostart: Attempting server launch with command: {' '.join(command)}")
-        print(f"Autostart: Working directory: {MINECRAFT_SERVER_PATH}")
-        # Use os.setsid for process group separation on Unix-like systems
-        preexec_fn = os.setsid if os.name != 'nt' else None
-        server_process = subprocess.Popen(
-            command,
-            cwd=str(MINECRAFT_SERVER_PATH),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, # Capture stdout (useful for logs if needed, but primarily for process running)
-            stderr=subprocess.PIPE, # Capture stderr for errors
-            universal_newlines=True, # Decode streams as text
-            encoding='utf-8',      # Specify encoding
-            errors='replace',      # Handle potential encoding errors
-            bufsize=1,             # Line buffered
-            preexec_fn=preexec_fn  # Create new process group (Unix)
-        )
-        print(f"Autostart: Server process initiated with PID: {server_process.pid}")
-        time.sleep(2) # Give it a moment to potentially fail
-        if server_process.poll() is not None:
-             # Try reading stderr if the process died quickly
-             stderr_output = "N/A"
-             try:
-                 stderr_output = server_process.stderr.read()
-             except Exception:
-                 pass # Ignore errors reading stderr if it's already closed
-             print(f"Autostart Error: Server process terminated quickly after launch.")
-             print(f"Autostart Exit Code: {server_process.returncode}")
-             print(f"Autostart Stderr (if available): {stderr_output[:500]}...") # Print first 500 chars
-             server_process = None # Reset process variable as it's dead
-        else:
-            print("Autostart: Server launch sequence initiated successfully.")
-
-    except FileNotFoundError:
-        print(f"Autostart Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        server_process = None
-    except Exception as e:
-        print(f"Autostart Error: Failed to start server: {e}")
-        server_process = None
-# --- End of Autostart Function ---
+    # 4. Call the internal start function which handles mode logic
+    # _start_server_process returns True on success attempt, False on failure
+    if not _start_server_process():
+        # Error details are printed within _start_server_process
+        print("Autostart Error: Server failed to start automatically. Check previous logs.")
+        # No flash message needed here as this runs before the first request
+    else:
+        # Success message printed within _start_server_process
+        print("Autostart: Server launch sequence initiated successfully.")
+        # _start_server_process handles setting the global server_process variable on success
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -751,54 +731,24 @@ def index():
 @app.route('/start', methods=['POST'])
 @login_required
 def start_server():
-    """Starts the Minecraft server subprocess."""
-    global server_process
+    """Starts the Minecraft server subprocess based on START_MODE."""
+    # Use the already modified _start_server_process which handles START_MODE check
+    global START_MODE # Ensure START_MODE is accessible
+
     if is_server_running():
         flash("Server is already running.", "warning")
         return redirect(url_for('index'))
 
-    server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
-    if not server_jar_path.is_file():
-         flash(f"Server JAR not found at: {server_jar_path}", "error")
-         return redirect(url_for('index'))
+    print(f"Start route: Attempting server start using mode: {START_MODE}")
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
-    try:
-        print(f"Starting server with command: {' '.join(command)}")
-        print(f"Working directory: {MINECRAFT_SERVER_PATH}")
-        preexec_fn = os.setsid if os.name != 'nt' else None
-        server_process = subprocess.Popen(
-            command,
-            cwd=str(MINECRAFT_SERVER_PATH),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            encoding='utf-8',
-            errors='replace',
-            bufsize=1,
-            preexec_fn=preexec_fn
-        )
-        print(f"Server process started with PID: {server_process.pid}")
-        time.sleep(1)
-        if server_process.poll() is not None:
-             stderr_output = server_process.stderr.read()
-             print(f"Server process failed to start. Exit code: {server_process.returncode}")
-             print(f"Stderr: {stderr_output}")
-             flash(f"Server failed to start (check console logs). Stderr: {stderr_output[:500]}...", "error")
-             server_process = None
-             return redirect(url_for('index'))
+    if _start_server_process(): # Call the internal function that has the correct logic
+        flash(f"Server starting (Mode: {START_MODE})...", "success")
+        time.sleep(4) # Give it a moment to spin up/potentially crash
+    else:
+        # _start_server_process already prints detailed errors
+        flash(f"Server failed to start (Mode: {START_MODE}). Check manager logs for details.", "error")
+        # _start_server_process sets server_process to None on failure
 
-        flash("Server starting...", "success")
-        time.sleep(4)
-    except FileNotFoundError:
-        print(f"Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        flash(f"Error: '{JAVA_EXECUTABLE}' not found. Ensure Java is installed and accessible.", "error")
-        server_process = None
-    except Exception as e:
-        print(f"Failed to start server: {e}")
-        flash(f"Failed to start server: {e}", "error")
-        server_process = None
     return redirect(url_for('index'))
 
 
