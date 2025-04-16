@@ -20,7 +20,7 @@
 ### File Editor over the web
 ### And more...
 
-
+### Note: Forge 1.17+ doesn't work right now 
 # Installation Guide
 
 > Follow the steps below to install and set up MSMP on your linux system.
