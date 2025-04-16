@@ -138,57 +138,34 @@ def get_db():
 # --- Function for Server Autostart ---  <<< ADD THIS FUNCTION
 def try_start_server_on_launch():
     """Attempts to start the Minecraft server if not already running."""
-    global server_process
+    global server_process, manager_settings # Added manager_settings access
+
+    # --- Get current settings ---
+    current_server_file = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
+    # --- End Get current settings ---
+
+
     if is_server_running():
         print("Autostart Skipped: Server process appears to be running already.")
         return # Don't try to start if it's somehow already running
 
-    server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
-    if not server_jar_path.is_file():
-        print(f"Autostart Error: Server JAR not found at: {server_jar_path}")
+    # --- Modified Check ---
+    server_executable_path = MINECRAFT_SERVER_PATH / current_server_file
+    if not server_executable_path.is_file():
+        # Use a generic error message
+        print(f"Autostart Error: Server executable not found at: {server_executable_path}")
         return
+    # --- End Modified Check ---
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
-    try:
-        print(f"Autostart: Attempting server launch with command: {' '.join(command)}")
-        print(f"Autostart: Working directory: {MINECRAFT_SERVER_PATH}")
-        # Use os.setsid for process group separation on Unix-like systems
-        preexec_fn = os.setsid if os.name != 'nt' else None
-        server_process = subprocess.Popen(
-            command,
-            cwd=str(MINECRAFT_SERVER_PATH),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, # Capture stdout (useful for logs if needed, but primarily for process running)
-            stderr=subprocess.PIPE, # Capture stderr for errors
-            universal_newlines=True, # Decode streams as text
-            encoding='utf-8',      # Specify encoding
-            errors='replace',      # Handle potential encoding errors
-            bufsize=1,             # Line buffered
-            preexec_fn=preexec_fn  # Create new process group (Unix)
-        )
-        print(f"Autostart: Server process initiated with PID: {server_process.pid}")
-        time.sleep(2) # Give it a moment to potentially fail
-        if server_process.poll() is not None:
-             # Try reading stderr if the process died quickly
-             stderr_output = "N/A"
-             try:
-                 stderr_output = server_process.stderr.read()
-             except Exception:
-                 pass # Ignore errors reading stderr if it's already closed
-             print(f"Autostart Error: Server process terminated quickly after launch.")
-             print(f"Autostart Exit Code: {server_process.returncode}")
-             print(f"Autostart Stderr (if available): {stderr_output[:500]}...") # Print first 500 chars
-             server_process = None # Reset process variable as it's dead
-        else:
-            print("Autostart: Server launch sequence initiated successfully.")
+    # Use the central function to handle the actual start logic
+    print("Autostart: Calling _start_server_process...")
+    if not _start_server_process():
+         # _start_server_process handles detailed logging of errors
+         print("Autostart Error: _start_server_process reported failure.")
+    else:
+         print("Autostart: _start_server_process initiated successfully.")
 
-    except FileNotFoundError:
-        print(f"Autostart Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        server_process = None
-    except Exception as e:
-        print(f"Autostart Error: Failed to start server: {e}")
-        server_process = None
-# --- End of Autostart Function ---
+# --- End of Autostart Function modifications ---
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -781,56 +758,24 @@ def index():
 @app.route('/start', methods=['POST'])
 @login_required
 def start_server():
-    """Starts the Minecraft server subprocess."""
-    global server_process
+    """Starts the server process using the _start_server_process helper."""
     if is_server_running():
         flash("Server is already running.", "warning")
         return redirect(url_for('index'))
 
-    server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
-    if not server_jar_path.is_file():
-         flash(f"Server JAR not found at: {server_jar_path}", "error")
-         return redirect(url_for('index'))
+    # Use the central function to handle the actual start logic
+    if _start_server_process():
+        # _start_server_process handles logging success/failure internally now
+        # Flash message can be more generic here, or rely on logs/API updates
+        flash("Server start sequence initiated...", "success")
+        # Give a short delay for the status API to potentially update
+        time.sleep(1) # Reduced delay as _start_server_process waits internally
+    else:
+        # _start_server_process already printed detailed errors to console
+        # Provide a user-friendly error message
+        flash("Failed to start server process. Check manager console logs for details.", "error")
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
-    try:
-        print(f"Starting server with command: {' '.join(command)}")
-        print(f"Working directory: {MINECRAFT_SERVER_PATH}")
-        preexec_fn = os.setsid if os.name != 'nt' else None
-        server_process = subprocess.Popen(
-            command,
-            cwd=str(MINECRAFT_SERVER_PATH),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            encoding='utf-8',
-            errors='replace',
-            bufsize=1,
-            preexec_fn=preexec_fn
-        )
-        print(f"Server process started with PID: {server_process.pid}")
-        time.sleep(1)
-        if server_process.poll() is not None:
-             stderr_output = server_process.stderr.read()
-             print(f"Server process failed to start. Exit code: {server_process.returncode}")
-             print(f"Stderr: {stderr_output}")
-             flash(f"Server failed to start (check console logs). Stderr: {stderr_output[:500]}...", "error")
-             server_process = None
-             return redirect(url_for('index'))
-
-        flash("Server starting...", "success")
-        time.sleep(4)
-    except FileNotFoundError:
-        print(f"Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        flash(f"Error: '{JAVA_EXECUTABLE}' not found. Ensure Java is installed and accessible.", "error")
-        server_process = None
-    except Exception as e:
-        print(f"Failed to start server: {e}")
-        flash(f"Failed to start server: {e}", "error")
-        server_process = None
     return redirect(url_for('index'))
-
 
 @app.route('/stop', methods=['POST'])
 @login_required
