@@ -36,6 +36,8 @@ DEFAULT_SETTINGS = {
     "ALLOW_REGISTRATION": True,
     "SERVER_JAR_NAME": "server.jar",
     "JAVA_EXECUTABLE": "java",
+    "SERVER_EXECUTABLE_TYPE": "jar",
+    "SERVER_JAR_NAME": "server.jar",
     "JAVA_ARGS": ["-Xmx2G", "-Xms1G"],
     "LOG_FILE_DISPLAY": str(MINECRAFT_SERVER_PATH / "logs" / "latest.log"), # For display only
     "DATABASE_DISPLAY": str(MINECRAFT_SERVER_PATH / 'users.db'), # For display only
@@ -110,6 +112,8 @@ AUTOSTART_SERVER = manager_settings.get('AUTOSTART_SERVER', DEFAULT_SETTINGS['AU
 ENABLE_AUTO_RESTART_ON_CRASH = manager_settings.get('ENABLE_AUTO_RESTART_ON_CRASH', DEFAULT_SETTINGS['ENABLE_AUTO_RESTART_ON_CRASH'])
 SERVER_JAR_NAME = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
 JAVA_EXECUTABLE = manager_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
+SERVER_EXECUTABLE_TYPE = manager_settings.get('SERVER_EXECUTABLE_TYPE', DEFAULT_SETTINGS['SERVER_EXECUTABLE_TYPE'])
+SERVER_JAR_NAME = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
 JAVA_ARGS = manager_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
 MAX_LOG_LINES = manager_settings.get('MAX_LOG_LINES', DEFAULT_SETTINGS['MAX_LOG_LINES'])
 ALLOWED_VIEW_EXTENSIONS = set(manager_settings.get('ALLOWED_VIEW_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_VIEW_EXTENSIONS']))
@@ -432,7 +436,7 @@ def _start_server_process():
     Assumes lock is NOT held by caller. Manages globals directly.
     Returns True on successful launch attempt, False otherwise.
     """
-    global server_process, user_initiated_stop
+    global server_process, user_initiated_stop, manager_settings # Ensure manager_settings is accessible if needed
 
     # Double-check if already running (could happen in race condition before lock)
     with server_management_lock:
@@ -440,13 +444,40 @@ def _start_server_process():
             print("_start_server_process: Server already running, skipping.")
             return True # Already running is considered a success state
 
-    server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
-    if not server_jar_path.is_file():
-        print(f"_start_server_process Error: Server JAR not found at: {server_jar_path}")
+    # --- Get current settings ---
+    current_executable_type = manager_settings.get('SERVER_EXECUTABLE_TYPE', DEFAULT_SETTINGS['SERVER_EXECUTABLE_TYPE'])
+    current_server_file = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
+    current_java_executable = manager_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
+    current_java_args = manager_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
+    # --- End Get current settings ---
+
+    server_executable_path = MINECRAFT_SERVER_PATH / current_server_file
+    if not server_executable_path.is_file():
+        print(f"_start_server_process Error: Server executable not found at: {server_executable_path}")
         # No flash here as this is internal, caller should handle UI feedback
         return False
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
+    # --- Build the command based on type ---
+    command = []
+    if current_executable_type == 'jar':
+        command = [current_java_executable] + current_java_args + ["-jar", str(server_executable_path), "nogui"]
+    elif current_executable_type == 'sh':
+        # Ensure the script is executable (optional, but good practice)
+        try:
+            if not os.access(server_executable_path, os.X_OK):
+                print(f"_start_server_process Warning: Script '{server_executable_path}' might not be executable. Attempting to run anyway.")
+        except Exception as e:
+             print(f"_start_server_process Warning: Could not check execute permission for '{server_executable_path}': {e}")
+
+        # Basic execution - might need 'bash' or similar depending on script specifics
+        command = [str(server_executable_path)]
+        # Alternative if scripts need explicit interpreter: command = ["bash", str(server_executable_path)]
+    else:
+        print(f"_start_server_process Error: Unknown SERVER_EXECUTABLE_TYPE: '{current_executable_type}'")
+        return False
+    # --- End Build the command ---
+
+
     new_process = None
     try:
         print(f"_start_server_process: Starting server with command: {' '.join(command)}")
@@ -455,7 +486,7 @@ def _start_server_process():
         # This helps ensure termination kills the whole Java process tree later
         preexec_fn = os.setsid if os.name != 'nt' else None
         new_process = subprocess.Popen(
-            command,
+            command, # Use the dynamically built command
             cwd=str(MINECRAFT_SERVER_PATH),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, # Capture stdout (useful for logs if needed, but primarily for process running)
@@ -490,7 +521,9 @@ def _start_server_process():
             return True
 
     except FileNotFoundError:
-        print(f"_start_server_process Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
+        # Customize error based on type
+        executable_name = current_java_executable if current_executable_type == 'jar' else str(server_executable_path)
+        print(f"_start_server_process Error: '{executable_name}' command or script not found. Check path and permissions.")
         # No flash here
         return False
     except Exception as e:
@@ -555,15 +588,22 @@ def save_properties(file_path, settings_dict):
 @app.route('/server_settings', methods=['GET', 'POST'])
 @login_required
 def server_settings():
-    global manager_settings # Allow modification
+    """Handles viewing and updating manager settings."""
+    global manager_settings # Allow modification of the global dictionary
+    # Define these globals to allow updating them directly after saving
+    global AUTOSTART_SERVER, ENABLE_AUTO_RESTART_ON_CRASH, SERVER_JAR_NAME, JAVA_EXECUTABLE
+    global JAVA_ARGS, MAX_LOG_LINES, ALLOWED_VIEW_EXTENSIONS, MAX_VIEW_FILE_SIZE_MB
+    global ALLOWED_UPLOAD_EXTENSIONS, ALLOWED_EDIT_EXTENSIONS, RESTART_DELAY_SECONDS
+    global SERVER_EXECUTABLE_TYPE # Add the new global
+
     if request.method == 'POST':
-        # Create a copy to modify safely
+        # Create a copy to modify safely, preventing partial updates if validation fails
         updated_settings = manager_settings.copy()
         form_errors = []
 
-        # Process each setting from the form
+        # Process each setting defined in DEFAULT_SETTINGS from the form
         for key in DEFAULT_SETTINGS.keys():
-            # Skip derived display paths
+            # Skip derived display paths, they are recalculated later
             if key in ["LOG_FILE_DISPLAY", "DATABASE_DISPLAY"]:
                 continue
 
@@ -572,57 +612,81 @@ def server_settings():
             # Handle checkboxes (booleans) - value is 'on' if checked, None otherwise
             if isinstance(DEFAULT_SETTINGS[key], bool):
                 updated_settings[key] = (form_value == 'on')
-            # Handle numbers (int/float)
+            # Handle numbers (int)
             elif isinstance(DEFAULT_SETTINGS[key], int):
-                try:
-                    updated_settings[key] = int(form_value)
-                except (ValueError, TypeError):
-                    form_errors.append(f"Invalid integer value for {key}: '{form_value}'")
-                    # Keep old value on error, or set default? Let's keep old.
-            elif isinstance(DEFAULT_SETTINGS[key], float):
-                 try:
-                     updated_settings[key] = float(form_value)
-                 except (ValueError, TypeError):
-                     form_errors.append(f"Invalid float value for {key}: '{form_value}'")
+                if form_value is not None:
+                    try:
+                        updated_settings[key] = int(form_value)
+                    except (ValueError, TypeError):
+                        form_errors.append(f"Invalid integer value for {key}: '{form_value}'")
+                        # Keep old value on error
+                else:
+                    # Handle case where number field is empty (use default or keep old?)
+                    # Let's keep the old value if the form field is missing/empty for a number
+                    pass # Keep updated_settings[key] as it was from the copy
+            # Handle numbers (float) - Add if needed, similar to int
+            # elif isinstance(DEFAULT_SETTINGS[key], float):
+            #     try: updated_settings[key] = float(form_value)
+            #     except (ValueError, TypeError): form_errors.append(f"Invalid float value for {key}: '{form_value}'")
+
             # Handle lists/sets (expect comma-separated string from textarea/input)
-            elif isinstance(DEFAULT_SETTINGS[key], list) or isinstance(DEFAULT_SETTINGS[key], set):
+            elif isinstance(DEFAULT_SETTINGS[key], (list, set)):
                  if form_value is not None:
-                     # Split by comma, strip whitespace from each item, remove empty strings
+                     # Split by comma, strip whitespace, remove empty strings
                      items = [item.strip() for item in form_value.split(',') if item.strip()]
-                     # Keep as list (JSON serializable)
+                     # Store as list (JSON serializable)
                      updated_settings[key] = items
                  else:
-                     updated_settings[key] = [] # Empty list if form value is missing
-            # Handle strings (default case)
-            else:
+                     updated_settings[key] = [] # Default to empty list if form value is missing
+
+            # Handle the new SERVER_EXECUTABLE_TYPE setting specifically
+            elif key == 'SERVER_EXECUTABLE_TYPE':
+                if form_value in ['jar', 'sh']:
+                     updated_settings[key] = form_value
+                elif form_value is None: # Handle case where value might be missing
+                    updated_settings[key] = DEFAULT_SETTINGS[key] # Revert to default if missing
+                    form_errors.append(f"Missing value for {key}, reverting to default.")
+                else: # Invalid value provided
+                    form_errors.append(f"Invalid value for {key}: '{form_value}'. Must be 'jar' or 'sh'.")
+                    # Keep old value on validation error
+
+            # Handle other strings (default case)
+            elif isinstance(DEFAULT_SETTINGS[key], str):
                 updated_settings[key] = form_value if form_value is not None else DEFAULT_SETTINGS[key]
 
+            # Handle potential future types here if necessary
+
+        # After processing all keys, check for errors
         if form_errors:
             for error in form_errors:
                 flash(error, "error")
-        else:
+            # Do NOT save or apply settings if errors occurred
+            # Render the template again, showing the *old* settings but with error messages
+            return render_template('server_settings.html',
+                                   settings=manager_settings, # Show original settings on error
+                                   default_settings=DEFAULT_SETTINGS)
+
+        else: # No form errors, proceed to save and apply
             # Update the derived display paths before saving/applying
             updated_settings["LOG_FILE_DISPLAY"] = str(MINECRAFT_SERVER_PATH / "logs" / "latest.log")
             updated_settings["DATABASE_DISPLAY"] = str(MINECRAFT_SERVER_PATH / 'users.db')
 
             if save_settings(updated_settings):
-                flash("Manager settings saved successfully. A restart of the manager application is required for some settings (like Java args or paths) to take full effect.", "success")
-                # *** CRITICAL: Apply the settings immediately where possible ***
-                # This requires reloading the global Python variables and Flask config
-                # Ideally, this logic should be centralized. For now, duplicate the applying logic:
+                flash("Manager settings saved successfully. A restart of the manager application *may* be required for some settings (like Java paths or arguments) to take full effect.", "success")
+
+                # --- Apply the settings immediately to global variables where possible ---
                 app.config['ALLOW_REGISTRATION'] = updated_settings.get('ALLOW_REGISTRATION', DEFAULT_SETTINGS['ALLOW_REGISTRATION'])
                 try:
                     max_upload_mb = int(updated_settings.get('MAX_UPLOAD_SIZE_MB', DEFAULT_SETTINGS['MAX_UPLOAD_SIZE_MB']))
                     app.config['MAX_CONTENT_LENGTH'] = max_upload_mb * 1024 * 1024
-                except ValueError: pass # Already flashed error
+                except ValueError:
+                     # Error handled during form processing, but ensure MAX_CONTENT_LENGTH is set reasonably
+                     app.config['MAX_CONTENT_LENGTH'] = manager_settings.get('MAX_UPLOAD_SIZE_MB', DEFAULT_SETTINGS['MAX_UPLOAD_SIZE_MB']) * 1024 * 1024
 
-                # Update global Python variables (again, restart needed for some)
-                global AUTOSTART_SERVER, ENABLE_AUTO_RESTART_ON_CRASH, SERVER_JAR_NAME, JAVA_EXECUTABLE
-                global JAVA_ARGS, MAX_LOG_LINES, ALLOWED_VIEW_EXTENSIONS, MAX_VIEW_FILE_SIZE_MB
-                global ALLOWED_UPLOAD_EXTENSIONS, ALLOWED_EDIT_EXTENSIONS, RESTART_DELAY_SECONDS
-
+                # Update all relevant global Python variables
                 AUTOSTART_SERVER = updated_settings.get('AUTOSTART_SERVER', DEFAULT_SETTINGS['AUTOSTART_SERVER'])
                 ENABLE_AUTO_RESTART_ON_CRASH = updated_settings.get('ENABLE_AUTO_RESTART_ON_CRASH', DEFAULT_SETTINGS['ENABLE_AUTO_RESTART_ON_CRASH'])
+                SERVER_EXECUTABLE_TYPE = updated_settings.get('SERVER_EXECUTABLE_TYPE', DEFAULT_SETTINGS['SERVER_EXECUTABLE_TYPE']) # Apply new setting
                 SERVER_JAR_NAME = updated_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
                 JAVA_EXECUTABLE = updated_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
                 JAVA_ARGS = updated_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
@@ -633,18 +697,22 @@ def server_settings():
                 ALLOWED_EDIT_EXTENSIONS = set(updated_settings.get('ALLOWED_EDIT_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_EDIT_EXTENSIONS']))
                 RESTART_DELAY_SECONDS = updated_settings.get('RESTART_DELAY_SECONDS', DEFAULT_SETTINGS['RESTART_DELAY_SECONDS'])
 
-                # Update the global manager_settings dict itself
+                # Update the main manager_settings dictionary itself to reflect saved state
                 manager_settings = updated_settings
 
-                # Redirect to GET to show updated values/messages
+                # Redirect to GET to show updated values and success message
                 return redirect(url_for('server_settings'))
             else:
+                # save_settings already flashes an error if it fails
+                # Render template showing the *attempted but unsaved* settings? Or revert?
+                # Reverting might be safer/less confusing. Show original settings.
                 flash("Failed to save manager settings.", "error")
-                # If save failed, don't redirect, show form with previous values
+                return render_template('server_settings.html',
+                                       settings=manager_settings, # Show original settings on save error
+                                       default_settings=DEFAULT_SETTINGS)
 
-    # GET request or POST failed save: Render the template
-    # Pass the *current* state of manager_settings
-    # Also pass DEFAULT_SETTINGS to help the template understand data types
+    # --- GET Request Logic ---
+    # Render the template with the current state of manager_settings
     return render_template('server_settings.html',
                            settings=manager_settings,
                            default_settings=DEFAULT_SETTINGS)
