@@ -173,6 +173,67 @@
                     <div class="path-display">{{ settings.DATABASE_DISPLAY }}</div>
                     <small>Path to the user database file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
                 </div>
+<div class="setting-item">
+    <label for="setting-START_MODE">START_MODE (Minecraft Server)</label>
+    <select id="setting-START_MODE" name="START_MODE" onchange="toggleStartFields()">
+        <option value="jar" {% if settings.START_MODE == 'jar' %}selected{% endif %}>JAR File</option>
+        <option value="script" {% if settings.START_MODE == 'script' %}selected{% endif %}>Shell Script</option>
+    </select>
+    <small>Choose whether to start the server using a JAR file or a shell script.</small>
+</div>
+
+<div class="setting-item" id="jar-fields">
+    <label for="setting-SERVER_JAR_NAME">SERVER_JAR_NAME</label>
+    <input type="text" id="setting-SERVER_JAR_NAME" name="SERVER_JAR_NAME" value="{{ settings.SERVER_JAR_NAME }}">
+    <small>The exact filename of your server JAR file (e.g., server.jar, paper.jar). Used when START_MODE is JAR.</small>
+</div>
+<div class="setting-item" id="java-fields"> {# Group Java settings together #}
+    <label for="setting-JAVA_EXECUTABLE">JAVA_EXECUTABLE</label>
+    <input type="text" id="setting-JAVA_EXECUTABLE" name="JAVA_EXECUTABLE" value="{{ settings.JAVA_EXECUTABLE }}">
+    <small>Command or path to the Java executable. Used when START_MODE is JAR.</small>
+</div>
+ <div class="setting-item" id="java-args-fields">
+    <label for="setting-JAVA_ARGS">JAVA_ARGS</label>
+    <textarea id="setting-JAVA_ARGS" name="JAVA_ARGS">{{ settings.JAVA_ARGS | join(',') }}</textarea>
+    <small>Java arguments (e.g., -Xmx, -Xms), comma-separated. Used when START_MODE is JAR.</small>
+</div>
+
+
+<div class="setting-item" id="script-fields">
+    <label for="setting-SERVER_SCRIPT_NAME">SERVER_SCRIPT_NAME</label>
+    <input type="text" id="setting-SERVER_SCRIPT_NAME" name="SERVER_SCRIPT_NAME" value="{{ settings.SERVER_SCRIPT_NAME }}">
+    <small>Filename of the executable shell script (e.g., start.sh, run.sh) in the server directory. Used when START_MODE is Script.</small>
+</div>
+
+<script>
+    function toggleStartFields() {
+        const startMode = document.getElementById('setting-START_MODE').value;
+        const jarFields = ['jar-fields', 'java-fields', 'java-args-fields']; // IDs of JAR related divs
+        const scriptFields = ['script-fields']; // IDs of Script related divs
+
+        if (startMode === 'jar') {
+            jarFields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'block';
+            });
+            scriptFields.forEach(id => {
+                 const el = document.getElementById(id);
+                 if (el) el.style.display = 'none';
+             });
+        } else if (startMode === 'script') {
+             jarFields.forEach(id => {
+                 const el = document.getElementById(id);
+                 if (el) el.style.display = 'none';
+             });
+             scriptFields.forEach(id => {
+                  const el = document.getElementById(id);
+                  if (el) el.style.display = 'block';
+              });
+        }
+    }
+    // Run on page load to set initial state
+    document.addEventListener('DOMContentLoaded', toggleStartFields);
+</script>
 
             </div> <div class="button-container">
                 <button type="submit" class="save">Save</button>
