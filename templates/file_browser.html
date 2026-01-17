@@ -1,245 +1,838 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Manager - {{ current_path or 'Server Root' }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-     </head>
-<body>
-     <div class="auth-status"> {% if g.user %}
-             <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-             <a href="{{ url_for('logout') }}">Logout</a>
-         {% else %}
-             <a href="{{ url_for('login') }}">Login</a> |
-             <a href="{{ url_for('register') }}">Register</a>
-         {% endif %}
-     </div>
-    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-        <span class="theme-toggle-label">Dark Mode</span>
+    <title>File Manager - {{ current_path or 'Server Root' }} - {{ brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+
+        .toast-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast-exit {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes pulse-border {
+
+            0%,
+            100% {
+                border-color: rgba(16, 185, 129, 0.4);
+            }
+
+            50% {
+                border-color: rgba(16, 185, 129, 0.8);
+            }
+        }
+
+        .drop-active {
+            animation: pulse-border 1s ease-in-out infinite;
+            background: rgba(16, 185, 129, 0.1) !important;
+        }
+
+        /* Internal drag-drop for moving files */
+        .draggable-row {
+            cursor: grab;
+        }
+
+        .draggable-row:active {
+            cursor: grabbing;
+        }
+
+        .dragging {
+            opacity: 0.5;
+            background: rgba(139, 92, 246, 0.1) !important;
+        }
+
+        .drop-target {
+            background: rgba(99, 102, 241, 0.2) !important;
+            outline: 2px dashed rgba(129, 140, 248, 0.6);
+            outline-offset: -2px;
+        }
+
+        .drop-target-parent {
+            background: rgba(99, 102, 241, 0.15) !important;
+            outline: 2px dashed rgba(129, 140, 248, 0.5);
+            outline-offset: -2px;
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100">
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+    <div id="toast-messages" class="hidden">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}<div data-category="{{ category }}"
+            data-message="{{ message }}"></div>{% endfor %}{% endif %}
+        {% endwith %}
     </div>
 
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
-
+    <!-- Drop Overlay (for file uploads) -->
+    <div id="drop-overlay"
+        class="fixed inset-0 z-50 hidden bg-gray-950/90 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+        <div class="text-center">
+            <div
+                class="w-24 h-24 mx-auto mb-4 rounded-2xl bg-emerald-500/20 flex items-center justify-center border-2 border-dashed border-emerald-500 drop-active">
+                <svg class="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-2">Drop files to upload</h2>
+            <p class="text-gray-400">Files will be uploaded to the current folder</p>
+        </div>
     </div>
 
-    {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
-    <div id="toast-messages" style="display: none;">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div data-category="{{ category }}" data-message="{{ message }}"></div>
-          {% endfor %}
-        {% endif %}
-      {% endwith %}
+    <!-- Move Confirmation Modal -->
+    <div id="move-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-gray-950/80 backdrop-blur-sm" onclick="closeMoveModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div class="glass rounded-2xl p-6 max-w-md w-full pointer-events-auto shadow-2xl border border-gray-600/30">
+                <div class="flex items-start gap-4 mb-6">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-white mb-1">Confirm Move</h3>
+                        <p class="text-gray-400 text-sm" id="move-modal-message"></p>
+                    </div>
+                </div>
+                <div class="bg-gray-800/50 rounded-lg p-3 mb-6">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span id="move-item-icon" class="text-lg"></span>
+                        <span class="text-white font-medium" id="move-item-name"></span>
+                        <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <span class="text-indigo-400 font-medium" id="move-target-name"></span>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeMoveModal()"
+                        class="flex-1 px-4 py-2.5 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-700 transition-colors font-medium">
+                        Cancel
+                    </button>
+                    <button onclick="confirmMove()"
+                        class="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold transition-all flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Move
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="file-manager"> <h1>File Manager</h1> <div class="nav-links"> <a href="{{ url_for('index') }}">Back to Server Control</a> </div> <div class="breadcrumbs"> {% for crumb in breadcrumbs %}
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-gray-950/80 backdrop-blur-sm" onclick="closeDeleteModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div class="glass rounded-2xl p-6 max-w-md w-full pointer-events-auto shadow-2xl border border-gray-600/30">
+                <div class="flex items-start gap-4 mb-6">
+                    <div class="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-white mb-1">Delete Item</h3>
+                        <p class="text-gray-400 text-sm">Are you sure you want to delete this item? This action cannot
+                            be undone.</p>
+                    </div>
+                </div>
+                <div class="bg-gray-800/50 rounded-lg p-3 mb-6">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span id="delete-item-icon" class="text-lg"></span>
+                        <span class="text-white font-medium truncate" id="delete-item-name"></span>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeDeleteModal()"
+                        class="flex-1 px-4 py-2.5 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-700 transition-colors font-medium">
+                        Cancel
+                    </button>
+                    <button id="confirm-delete-btn" onclick="confirmDelete()"
+                        class="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors font-medium flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    {% if has_custom_icon %}
+                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                        class="w-10 h-10 rounded-xl shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                </a>
+            </div>
+            <nav class="flex items-center gap-1">
+                <!-- Navigation Links -->
+                <a href="{{ url_for('index') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                <a href="{{ url_for('files') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                <a href="{{ url_for('server_properties') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                <a href="{{ url_for('server_settings') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                {% if g.user %}
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}"
+                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                    title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="pt-24 pb-8 px-4 max-w-7xl mx-auto">
+        <!-- Breadcrumbs -->
+        <div class="glass rounded-xl p-4 mb-4">
+            <div class="flex items-center gap-2 text-sm overflow-x-auto">
+                {% for crumb in breadcrumbs %}
                 {% if not loop.last %}
-                    <a href="{{ url_for('files', subpath=crumb.path) }}">{{ crumb.name }}</a> /
+                <a href="{{ url_for('files', subpath=crumb.path) }}"
+                    class="text-gray-400 hover:text-emerald-400 transition-colors whitespace-nowrap">{{ crumb.name
+                    }}</a>
+                <svg class="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
                 {% else %}
-                    <span>{{ crumb.name }}</span>
+                <span class="text-white font-medium whitespace-nowrap">{{ crumb.name }}</span>
                 {% endif %}
-            {% endfor %}
+                {% endfor %}
+            </div>
         </div>
 
-        <div class="upload-section"> <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
-                <input type="hidden" name="target_dir" value="{{ current_path }}">
-                <label for="file_upload">Upload File:</label>
-                <input type="file" name="file" id="file_upload" required>
-                <button type="submit" class="action-button upload">Upload</button> <small>(Max: {{ config.MAX_CONTENT_LENGTH | filesizeformat if config.MAX_CONTENT_LENGTH else 'N/A' }}, Allowed: {{ config.ALLOWED_UPLOAD_EXTENSIONS | join(', ') }})</small>
-            </form>
-        </div>
-
-        <div class="create-actions"> {# New Folder Form #}
-             <form action="{{ url_for('create_folder') }}" method="post" style="display: inline-block;">
-                 <input type="hidden" name="target_dir" value="{{ current_path }}">
-                 <input type="text" name="new_name" id="new_folder_name" placeholder="Folder Name" required size="20">
-                 <button type="submit" class="action-button create-folder">Create Folder</button> </form>
-             {# New File Form #}
-             <form action="{{ url_for('create_file') }}" method="post" style="display: inline-block;">
-                 <input type="hidden" name="target_dir" value="{{ current_path }}">
-                 <input type="text" name="new_name" id="new_file_name" placeholder="File Name (e.g. config.yml)" required size="25">
-                 <button type="submit" class="action-button create-file">Create File</button> </form>
-        </div>
-
-        <div class="clipboard-actions"> {% if clipboard_item %}
-                <span>Clipboard: {{ clipboard_item.action | title }} '{{ clipboard_item.path | basename }}'</span>
-                <form action="{{ url_for('clipboard_paste') }}" method="post" style="display: inline;">
+        <!-- Drop Zone & Actions -->
+        <div id="drop-zone"
+            class="glass rounded-xl p-4 mb-4 border-2 border-dashed border-transparent transition-all duration-200">
+            <div class="flex flex-wrap items-center gap-4">
+                <!-- Upload -->
+                <form id="upload-form" action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data"
+                    class="flex items-center gap-2">
                     <input type="hidden" name="target_dir" value="{{ current_path }}">
-                    <button type="submit" class="action-button paste">Paste Here</button> </form>
-                <form action="{{ url_for('clipboard_clear') }}" method="post" style="display: inline;">
-                    <button type="submit" class="action-button clear-clip">Clear Clipboard</button> </form>
-            {% else %}
-                 <span>Clipboard is empty.</span>
-            {% endif %}
+                    <label
+                        class="cursor-pointer px-4 py-2 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors text-sm font-medium flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        <span>Upload</span>
+                        <input type="file" name="file" id="file-input" class="hidden" multiple>
+                    </label>
+                    <span class="text-xs text-gray-500 hidden sm:inline">or drag & drop files here</span>
+                </form>
+
+                <!-- New Folder -->
+                <form action="{{ url_for('create_folder') }}" method="post" class="flex items-center gap-2">
+                    <input type="hidden" name="target_dir" value="{{ current_path }}">
+                    <input type="text" name="new_name" placeholder="Folder name" required
+                        class="px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 w-32">
+                    <button type="submit"
+                        class="px-3 py-2 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-colors text-sm font-medium flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                        </svg>
+                        <span class="hidden sm:inline">New Folder</span>
+                    </button>
+                </form>
+
+                <!-- New File -->
+                <form action="{{ url_for('create_file') }}" method="post" class="flex items-center gap-2">
+                    <input type="hidden" name="target_dir" value="{{ current_path }}">
+                    <input type="text" name="new_name" placeholder="file.txt" required
+                        class="px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 w-32">
+                    <button type="submit"
+                        class="px-3 py-2 rounded-lg bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30 transition-colors text-sm font-medium flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span class="hidden sm:inline">New File</span>
+                    </button>
+                </form>
+
+                <!-- Clipboard -->
+                {% if clipboard_item %}
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="text-xs text-gray-400">📋 {{ clipboard_item.action | title }}: {{ clipboard_item.path |
+                        basename }}</span>
+                    <form action="{{ url_for('clipboard_paste') }}" method="post" class="inline"><input type="hidden"
+                            name="target_dir" value="{{ current_path }}"><button type="submit"
+                            class="px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors text-xs font-medium">Paste</button>
+                    </form>
+                    <form action="{{ url_for('clipboard_clear') }}" method="post" class="inline"><button type="submit"
+                            class="px-3 py-1.5 rounded-lg bg-gray-700/50 text-gray-400 hover:bg-gray-700 transition-colors text-xs font-medium">Clear</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Upload Progress -->
+            <div id="upload-progress" class="hidden mt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm text-gray-400">Uploading <span id="upload-filename"></span>...</span>
+                    <span id="upload-percent" class="text-sm text-emerald-400">0%</span>
+                </div>
+                <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="upload-bar"
+                        class="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-300"
+                        style="width: 0%"></div>
+                </div>
+            </div>
         </div>
 
-        <table class="file-list"> <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Size</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                 {% if parent_path is not none %}
-                <tr>
-                    <td colspan="4">
-                        <a href="{{ url_for('files', subpath=parent_path) }}" class="parent-dir">⬆️ Parent Directory</a> </td>
-                </tr>
-                {% endif %}
+        <!-- File List -->
+        <div class="glass rounded-xl overflow-hidden">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-700/50">
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            Name</th>
+                        <th
+                            class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                            Type</th>
+                        <th
+                            class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                            Size</th>
+                        <th class="px-4 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800/50">
+                    {% if parent_path is not none %}
+                    <tr class="hover:bg-gray-800/30 transition-colors droppable-folder" data-path="{{ parent_path }}"
+                        data-name="Parent Directory" data-is-parent="true">
+                        <td colspan="4" class="px-4 py-3">
+                            <a href="{{ url_for('files', subpath=parent_path) }}"
+                                class="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                                </svg>
+                                <span class="font-medium">Parent Directory</span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
 
-                {% for item in items %}
-                    <tr>
-                        <td>
-                            {% if item.is_dir %}
-                                📁 <a href="{{ url_for('files', subpath=item.path) }}">{{ item.name }}</a>
-                            {% elif item.is_file %}
-                                {% if item.is_viewable or item.is_editable %}
-                                    📄 <a href="{{ url_for('view_file', filepath=item.path) }}" title="{{ 'Edit File' if item.is_editable else 'View File' }}">{{ item.name }}</a>
-                                    {% if item.is_editable %}<span class="note">(Editable)</span>{% endif %} {% else %}
-                                    📄 {{ item.name }} <span class="note">(Binary/Not Viewable)</span> {% endif %}
-                            {% else %}
-                               ❓ {{ item.name }}
-                            {% endif %}
-                            <form action="{{ url_for('rename_item') }}" method="post" class="rename-form" style="display: none;"> <input type="hidden" name="original_path" value="{{ item.path }}">
-                                <input type="text" name="new_name" value="{{ item.name }}" required class="rename-input"> <button type="submit" class="action-button rename-confirm">✔️</button> <button type="button" class="action-button rename-cancel">❌</button> </form>
+                    {% for item in items %}
+                    <tr class="hover:bg-gray-800/30 transition-colors group draggable-row {% if item.is_dir %}droppable-folder{% endif %}"
+                        draggable="true" data-path="{{ item.path }}" data-name="{{ item.name }}"
+                        data-is-dir="{{ 'true' if item.is_dir else 'false' }}">
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-3">
+                                {% if item.is_dir %}
+                                <span class="text-amber-400">📁</span>
+                                <a href="{{ url_for('files', subpath=item.path) }}"
+                                    class="text-white hover:text-emerald-400 transition-colors font-medium">{{ item.name
+                                    }}</a>
+                                {% elif item.is_file %}
+                                <span class="text-blue-400">📄</span>
+                                {% if item.is_editable %}
+                                <a href="javascript:void(0)"
+                                    onclick="window.open('{{ url_for('view_file', filepath=item.path) }}?popup=1', '_blank', 'width=1200,height=800,menubar=no,toolbar=no,location=no,status=no'); return false;"
+                                    class="text-white hover:text-emerald-400 transition-colors">{{ item.name }}</a>
+                                <span class="text-xs text-emerald-500/60 ml-1">edit</span>
+                                {% elif item.is_viewable %}
+                                <a href="{{ url_for('view_file', filepath=item.path) }}"
+                                    class="text-white hover:text-emerald-400 transition-colors">{{ item.name }}</a>
+                                {% else %}
+                                <span class="text-gray-400">{{ item.name }}</span>
+                                {% endif %}
+                                {% endif %}
+                            </div>
+                            <form action="{{ url_for('rename_item') }}" method="post"
+                                class="rename-form hidden mt-2 flex items-center gap-2">
+                                <input type="hidden" name="original_path" value="{{ item.path }}">
+                                <input type="text" name="new_name" value="{{ item.name }}" required
+                                    class="rename-input px-2 py-1 rounded bg-gray-800 border border-gray-600 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
+                                <button type="submit" class="text-emerald-400 hover:text-emerald-300">✓</button>
+                                <button type="button" class="rename-cancel text-red-400 hover:text-red-300">✕</button>
+                            </form>
                         </td>
-                        <td>{{ 'Directory' if item.is_dir else 'File' if item.is_file else 'Unknown' }}</td>
-                        <td>
-                            {% if item.is_file and item.size != -1 %}
-                                {{ item.size | filesizeformat }}
-                            {% elif item.is_file and item.size == -1 %}
-                                N/A
-                            {% endif %}
-                        </td>
-                        <td class="actions"> <span class="item-name-display" style="display: none;">{{ item.name }}</span>
-                            <div class="action-buttons"> {% if item.is_file %}
-                                <a href="{{ url_for('download_file', filepath=item.path) }}" class="action-button download" title="Download">⬇️</a> {% endif %}
-                                <button type="button" class="action-button rename" title="Rename">✏️</button> <form action="{{ url_for('clipboard_copy') }}" method="post" style="display: inline;">
-                                    <input type="hidden" name="path" value="{{ item.path }}">
-                                    <button type="submit" class="action-button copy" title="Copy">📋</button> </form>
-                                <form action="{{ url_for('clipboard_cut') }}" method="post" style="display: inline;">
-                                    <input type="hidden" name="path" value="{{ item.path }}">
-                                    <button type="submit" class="action-button cut" title="Cut">✂️</button> </form>
-                                <form action="{{ url_for('delete_item') }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete \'{{ item.name }}\'? This action cannot be undone!');">
-                                    <input type="hidden" name="path" value="{{ item.path }}">
-                                    <button type="submit" class="action-button delete" title="Delete">🗑️</button> </form>
+                        <td class="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">{{ 'Folder' if item.is_dir else
+                            'File' }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400 hidden md:table-cell font-mono">{% if item.is_file
+                            and item.size != -1 %}{{ item.size | filesizeformat }}{% endif %}</td>
+                        <td class="px-4 py-3 text-right">
+                            <div
+                                class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {% if item.is_file %}
+                                <a href="{{ url_for('download_file', filepath=item.path) }}"
+                                    class="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-cyan-400 transition-colors"
+                                    title="Download">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                </a>
+                                {% endif %}
+                                <button type="button"
+                                    class="rename-btn p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-blue-400 transition-colors"
+                                    title="Rename">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                    </svg>
+                                </button>
+                                <form action="{{ url_for('clipboard_copy') }}" method="post" class="inline"><input
+                                        type="hidden" name="path" value="{{ item.path }}"><button type="submit"
+                                        class="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-amber-400 transition-colors"
+                                        title="Copy"><svg class="w-4 h-4" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg></button></form>
+                                <form action="{{ url_for('clipboard_cut') }}" method="post" class="inline"><input
+                                        type="hidden" name="path" value="{{ item.path }}"><button type="submit"
+                                        class="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-orange-400 transition-colors"
+                                        title="Cut"><svg class="w-4 h-4" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" />
+                                        </svg></button></form>
+                                <button type="button"
+                                    onclick="openDeleteModal('{{ item.path }}', '{{ item.name|replace('\'', '\\\'') }}', {{ 'true' if item.is_dir else 'false' }})"
+                                    class="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-red-400 transition-colors"
+                                    title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg></button>
                             </div>
                         </td>
                     </tr>
-                {% else %}
+                    {% else %}
                     <tr>
-                        <td colspan="4"><em>Directory is empty or inaccessible.</em></td>
+                        <td colspan="4" class="px-4 py-8 text-center text-gray-500">
+                            <div class="flex flex-col items-center gap-2">
+                                <svg class="w-12 h-12 text-gray-600" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                </svg>
+                                <span>This folder is empty</span>
+                                <span class="text-sm">Drag files here or use the upload button</span>
+                            </div>
+                        </td>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-         <p class="warning"> Warning: File operations can be dangerous. Ensure proper password is set and authentification is turned off.
-        </p>
-    </div>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
 
     <script>
-        // Inline JavaScript for rename functionality (keep existing)
-        document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.file-list .rename').forEach(button => {
-                button.addEventListener('click', function() {
-                    const row = this.closest('tr');
-                    const nameCell = row.querySelector('td:first-child');
-                    const actionCell = row.querySelector('td.actions');
-                    const nameLink = nameCell.querySelector('a, span:not(.note)');
-                    if(nameLink) nameLink.style.display = 'none';
-                    const nameNote = nameCell.querySelector('span.note');
-                    if (nameNote) nameNote.style.display = 'none';
-                    actionCell.querySelector('.action-buttons').style.display = 'none';
-                    nameCell.querySelector('.rename-form').style.display = 'inline-block';
-                    nameCell.querySelector('.rename-input').focus();
-                    nameCell.querySelector('.rename-input').select();
-                });
+        // === Upload Drag and Drop ===
+        const dropZone = document.getElementById('drop-zone');
+        const dropOverlay = document.getElementById('drop-overlay');
+        const fileInput = document.getElementById('file-input');
+        const uploadForm = document.getElementById('upload-form');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadBar = document.getElementById('upload-bar');
+        const uploadPercent = document.getElementById('upload-percent');
+        const uploadFilename = document.getElementById('upload-filename');
+
+        let dragCounter = 0;
+        let internalDragActive = false; // Track if we're doing internal drag
+
+        // Check if drag contains external files (upload) vs internal text (move)
+        function isExternalFileDrag(e) {
+            return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes('text/x-file-path');
+        }
+
+        document.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            if (internalDragActive) return; // Skip overlay for internal drags
+            if (!isExternalFileDrag(e)) return;
+
+            dragCounter++;
+            dropOverlay.classList.remove('hidden');
+            dropZone.classList.add('drop-active', 'border-emerald-500');
+        });
+
+        document.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            if (internalDragActive) return;
+
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropOverlay.classList.add('hidden');
+                dropZone.classList.remove('drop-active', 'border-emerald-500');
+            }
+        });
+
+        document.addEventListener('dragover', (e) => e.preventDefault());
+
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (internalDragActive) return; // Handled by row drop handler
+
+            dragCounter = 0;
+            dropOverlay.classList.add('hidden');
+            dropZone.classList.remove('drop-active', 'border-emerald-500');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) uploadFiles(files);
+        });
+
+        // === Internal Drag and Drop (Moving Files) ===
+        const moveModal = document.getElementById('move-modal');
+        let pendingMove = null; // { sourcePath, sourceName, sourceIsDir, targetPath, targetName }
+
+        // Make rows draggable
+        document.querySelectorAll('.draggable-row').forEach(row => {
+            row.addEventListener('dragstart', (e) => {
+                internalDragActive = true;
+                row.classList.add('dragging');
+                e.dataTransfer.setData('text/x-file-path', row.dataset.path);
+                e.dataTransfer.setData('text/x-file-name', row.dataset.name);
+                e.dataTransfer.setData('text/x-is-dir', row.dataset.isDir);
+                e.dataTransfer.effectAllowed = 'move';
             });
 
-            document.querySelectorAll('.file-list .rename-cancel').forEach(button => {
-                button.addEventListener('click', function() {
-                     const row = this.closest('tr');
-                     const nameCell = row.querySelector('td:first-child');
-                     const actionCell = row.querySelector('td.actions');
-                     const nameLink = nameCell.querySelector('a, span:not(.note)');
-                     if(nameLink) nameLink.style.display = 'inline';
-                    const nameNote = nameCell.querySelector('span.note');
-                    if (nameNote) nameNote.style.display = 'inline';
-                     actionCell.querySelector('.action-buttons').style.display = 'inline-block';
-                     nameCell.querySelector('.rename-form').style.display = 'none';
-                });
-            });
-
-            document.querySelectorAll('.clear-clip').forEach(button => {
-                button.addEventListener('click', function(event) {
-                    console.log('Clear clipboard button clicked - submitting form.');
+            row.addEventListener('dragend', () => {
+                internalDragActive = false;
+                row.classList.remove('dragging');
+                document.querySelectorAll('.drop-target, .drop-target-parent').forEach(el => {
+                    el.classList.remove('drop-target', 'drop-target-parent');
                 });
             });
         });
-    </script>
-<script>
-    // Select the status element
-    const statusElement = document.getElementById('server-status');
 
-    // Function to fetch and update status
-    function updateStatus() {
-        // Ensure the element exists before fetching
-        if (!statusElement) {
-            console.warn('Status element not found on this page.');
-            return;
+        // Make folders droppable
+        document.querySelectorAll('.droppable-folder').forEach(folder => {
+            folder.addEventListener('dragover', (e) => {
+                if (!internalDragActive) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                // Don't allow dropping on self
+                const draggedPath = e.dataTransfer.getData('text/x-file-path') || document.querySelector('.dragging')?.dataset.path;
+                if (draggedPath === folder.dataset.path) return;
+
+                folder.classList.add(folder.dataset.isParent ? 'drop-target-parent' : 'drop-target');
+            });
+
+            folder.addEventListener('dragleave', () => {
+                folder.classList.remove('drop-target', 'drop-target-parent');
+            });
+
+            folder.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                folder.classList.remove('drop-target', 'drop-target-parent');
+
+                const sourcePath = e.dataTransfer.getData('text/x-file-path');
+                const sourceName = e.dataTransfer.getData('text/x-file-name');
+                const sourceIsDir = e.dataTransfer.getData('text/x-is-dir') === 'true';
+                const targetPath = folder.dataset.path;
+                const targetName = folder.dataset.name;
+
+                // Don't allow dropping on self
+                if (sourcePath === targetPath) return;
+
+                // Show confirmation modal
+                showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName);
+            });
+        });
+
+        function showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName) {
+            pendingMove = { sourcePath, sourceName, sourceIsDir, targetPath, targetName };
+
+            const itemType = sourceIsDir ? 'directory' : 'file';
+            const targetDisplay = targetName || 'Server Root';
+
+            document.getElementById('move-modal-message').textContent =
+                `Are you sure you want to move this ${itemType}?`;
+            document.getElementById('move-item-icon').textContent = sourceIsDir ? '📁' : '📄';
+            document.getElementById('move-item-name').textContent = sourceName;
+            document.getElementById('move-target-name').textContent = targetDisplay;
+
+            moveModal.classList.remove('hidden');
         }
 
-        fetch("{{ url_for('status_api') }}") // Make sure the API endpoint is correct
-            .then(response => {
-                if (!response.ok) {
-                    // Handle potential errors like 401 Unauthorized if session expired
-                    if (response.status === 401) {
-                        console.warn("Status API access denied. User might be logged out.");
-                        // Optional: redirect to login or show a message
+        function closeMoveModal() {
+            moveModal.classList.add('hidden');
+            pendingMove = null;
+        }
+
+        async function confirmMove() {
+            if (!pendingMove) return;
+
+            const { sourcePath, targetPath } = pendingMove;
+            closeMoveModal();
+
+            try {
+                const response = await fetch('{{ url_for("api_move_item") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_path: sourcePath,
+                        target_dir: targetPath
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(data.message, 'error');
+                }
+            } catch (err) {
+                showToast('Failed to move item: ' + err.message, 'error');
+            }
+        }
+
+        // Close modal on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !moveModal.classList.contains('hidden')) {
+                closeMoveModal();
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) uploadFiles(fileInput.files);
+        });
+
+        function uploadFiles(files) {
+            const formData = new FormData(uploadForm);
+            // Remove the empty file field and add all files
+            formData.delete('file');
+
+            let uploaded = 0;
+            const total = files.length;
+
+            function uploadNext() {
+                if (uploaded >= total) {
+                    setTimeout(() => location.reload(), 500);
+                    return;
+                }
+
+                const file = files[uploaded];
+                const singleFormData = new FormData();
+                singleFormData.append('target_dir', formData.get('target_dir'));
+                singleFormData.append('file', file);
+
+                uploadProgress.classList.remove('hidden');
+                uploadFilename.textContent = file.name;
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '{{ url_for("upload_file") }}', true);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        uploadBar.style.width = percent + '%';
+                        uploadPercent.textContent = percent + '%';
                     }
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                const currentStatusText = statusElement.textContent;
-                // Only update if the status has actually changed
-                if (currentStatusText !== data.status) {
-                    statusElement.textContent = data.status;
-                    const isRunning = data.status === 'Running';
-                    // Update class for styling (e.g., green/red background)
-                    statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+                };
 
-                    // If you ADDED start/stop buttons to these pages,
-                    // you would update their disabled state here too.
-                    // e.g., const startBtn = document.getElementById('start-button');
-                    //      if(startBtn) startBtn.disabled = isRunning;
-                }
-            })
-            .catch(error => console.error('Error fetching status:', error));
-    }
+                xhr.onload = () => {
+                    uploaded++;
+                    if (uploaded < total) {
+                        uploadBar.style.width = '0%';
+                        uploadPercent.textContent = '0%';
+                        uploadNext();
+                    } else {
+                        showToast(`Uploaded ${total} file(s) successfully`, 'success');
+                        setTimeout(() => location.reload(), 500);
+                    }
+                };
 
-    // Initial call to set status when page loads
-    updateStatus();
+                xhr.onerror = () => {
+                    showToast(`Failed to upload ${file.name}`, 'error');
+                    uploaded++;
+                    uploadNext();
+                };
 
-    // Set interval to check status every 5 seconds (5000 milliseconds)
-    setInterval(updateStatus, 5000);
+                xhr.send(singleFormData);
+            }
 
-    // --- Include other scripts like darkmode.js and toast.js ---
-    // Ensure these lines are also present, as they are in the originals:
-    // <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+            uploadNext();
+        }
 
-</script>
-<script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-<script src="{{ url_for('static', filename='toast.js') }}"></script>
+        // Rename functionality
+        document.querySelectorAll('.rename-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const row = this.closest('tr');
+                const nameCell = row.querySelector('td:first-child');
+                const form = nameCell.querySelector('.rename-form');
+                const nameDisplay = nameCell.querySelector('div');
+                nameDisplay.classList.add('hidden');
+                form.classList.remove('hidden');
+                form.querySelector('.rename-input').focus();
+                form.querySelector('.rename-input').select();
+            });
+        });
+
+        document.querySelectorAll('.rename-cancel').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const row = this.closest('tr');
+                const nameCell = row.querySelector('td:first-child');
+                const form = nameCell.querySelector('.rename-form');
+                const nameDisplay = nameCell.querySelector('div');
+                form.classList.add('hidden');
+                nameDisplay.classList.remove('hidden');
+            });
+        });
+
+        // Toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+        }
+        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+        // Delete Modal
+        let deletePath = '';
+
+        function openDeleteModal(path, name, isDir) {
+            deletePath = path;
+            document.getElementById('delete-item-name').textContent = name;
+
+            const iconContainer = document.getElementById('delete-item-icon');
+            if (isDir) {
+                // Folder icon
+                iconContainer.innerHTML = '<svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>';
+            } else {
+                // File icon
+                iconContainer.innerHTML = '<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>';
+            }
+
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+            deletePath = '';
+        }
+
+        function confirmDelete() {
+            if (!deletePath) return;
+
+            // Create and submit form dynamically
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{{ url_for('delete_item') }}";
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'path';
+            input.value = deletePath;
+
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+    </script>
 </body>
+
 </html>

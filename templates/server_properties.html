@@ -1,150 +1,331 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Server Properties</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    </head>
-<body>
-    <div class="auth-status">
-        {% if g.user %}
-            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-            <a href="{{ url_for('logout') }}">Logout</a>
-        {% else %}
-            <a href="{{ url_for('login') }}">Login</a> |
-            <a href="{{ url_for('register') }}">Register</a>
-        {% endif %}
-    </div>
-    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-        <span class="theme-toggle-label">Dark Mode</span>
-    </div>
-
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
-
-    <div class="properties-form"> <h1>Server Properties</h1>
-
-        <div class="nav-links"> <a href="{{ url_for('index') }}">Back to Server Control</a>
-        </div>
-
-        {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
-        <div id="toast-messages" style="display: none;">
-          {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-              {% for category, message in messages %}
-                <div data-category="{{ category }}" data-message="{{ message }}"></div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
-        </div>
-
-        <form method="post" action="{{ url_for('server_properties') }}">
-
-             <div>
-             </div>
-             {% if not settings_list %}
-                 <p><em>Could not load settings or the properties file is empty/missing.</em></p>
-            {% else %}
-                <div class="settings-grid"> {% for item in settings_list %}
-                        {% if item.type == 'setting' %}
-                            <div class="setting-item"> <label for="setting-{{ item.key }}">{{ item.key }}</label> {# Specific input types based on key or value type #}
-                                {% if item.key == 'difficulty' %}
-                                    <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="peaceful" {% if item.value == 'peaceful' %}selected{% endif %}>peaceful</option>
-                                        <option value="easy" {% if item.value == 'easy' %}selected{% endif %}>easy</option>
-                                        <option value="normal" {% if item.value == 'normal' %}selected{% endif %}>normal</option>
-                                        <option value="hard" {% if item.value == 'hard' %}selected{% endif %}>hard</option>
-                                    </select>
-                                {% elif item.key == 'gamemode' %}
-                                     <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="survival" {% if item.value == 'survival' %}selected{% endif %}>survival</option>
-                                        <option value="creative" {% if item.value == 'creative' %}selected{% endif %}>creative</option>
-                                        <option value="adventure" {% if item.value == 'adventure' %}selected{% endif %}>adventure</option>
-                                        <option value="spectator" {% if item.value == 'spectator' %}selected{% endif %}>spectator</option>
-                                    </select>
-                                {% elif item.value.lower() == 'true' or item.value.lower() == 'false' %}
-                                    <select id="setting-{{ item.key }}" name="{{ item.key }}"> <option value="true" {% if item.value.lower() == 'true' %}selected{% endif %}>true</option>
-                                        <option value="false" {% if item.value.lower() == 'false' %}selected{% endif %}>false</option>
-                                    </select>
-                                {% else %}
-                                    {# Default: Render a text input #}
-                                    <input type="text" id="setting-{{ item.key }}"
-                                           name="{{ item.key }}"
-                                           value="{{ item.value }}">
-                                {% endif %}
-                                {# You could add descriptions here based on known keys #}
-                            </div>
-                         {% elif item.type == 'comment' %}
-                         {# --- Comment lines are intentionally not displayed --- #}
-                         {# <div class="comment-line">{{ item.raw.strip() }}</div> #} {# --- End of hidden comment line display --- #}
-                        {% elif item.type == 'empty' %}
-                             <div class="empty-line"></div> {% else %} {# 'unknown' type #}
-                             <div class="comment-line"><em>{{ item.raw.strip() }}</em></div> {# Display unknowns like comments #}
-                        {% endif %}
-                    {% endfor %}
-                </div>
-            {% endif %} {# End check for settings_list #}
-
-            <div class="save-button-container"> <button type="submit">Save</button>
-            </div>
-    </div>
-<script>
-    // Select the status element
-    const statusElement = document.getElementById('server-status');
-
-    // Function to fetch and update status
-    function updateStatus() {
-        // Ensure the element exists before fetching
-        if (!statusElement) {
-            console.warn('Status element not found on this page.');
-            return;
+    <title>Server Properties - {{ brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
         }
 
-        fetch("{{ url_for('status_api') }}") // Make sure the API endpoint is correct
-            .then(response => {
-                if (!response.ok) {
-                    // Handle potential errors like 401 Unauthorized if session expired
-                    if (response.status === 401) {
-                        console.warn("Status API access denied. User might be logged out.");
-                        // Optional: redirect to login or show a message
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+
+        .toast-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast-exit {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .save-bar {
+            animation: slideUp 0.3s ease-out;
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100 pb-24">
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+    <div id="toast-messages" class="hidden">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}<div data-category="{{ category }}"
+            data-message="{{ message }}"></div>{% endfor %}{% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    {% if has_custom_icon %}
+                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                        class="w-10 h-10 rounded-xl shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                </a>
+            </div>
+            <nav class="flex items-center gap-1">
+                <!-- Navigation Links -->
+                <a href="{{ url_for('index') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                <a href="{{ url_for('files') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                <a href="{{ url_for('server_properties') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                <a href="{{ url_for('server_settings') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                {% if g.user %}
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}"
+                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                    title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="pt-24 pb-8 px-4 max-w-5xl mx-auto">
+        <div class="glass rounded-2xl p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold">Server Properties</h1>
+                    <p class="text-gray-400 text-sm mt-1">Configure {{ filename }}</p>
+                </div>
+                <div class="flex items-center gap-2 text-amber-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span class="text-sm">Restart required after changes</span>
+                </div>
+            </div>
+
+            <!-- Search/Filter -->
+            <div class="mb-6">
+                <input type="text" id="search-input" placeholder="Search properties..."
+                    class="w-full px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500">
+            </div>
+
+            <form method="post" action="{{ url_for('server_properties') }}" id="properties-form">
+                <div id="properties-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for item in settings_list %}
+                    {% if item.type == 'setting' %}
+                    <div class="property-item p-4 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:border-gray-600/50 transition-colors"
+                        data-key="{{ item.key | lower }}">
+                        <label for="prop-{{ item.key }}" class="block text-sm font-mono text-gray-300 mb-2 truncate"
+                            title="{{ item.key }}">{{ item.key }}</label>
+                        {% if item.value in ['true', 'false'] %}
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-500">{{ item.value }}</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="{{ item.key }}" id="prop-{{ item.key }}" {% if
+                                    item.value=='true' %}checked{% endif %} class="sr-only peer prop-input"
+                                    data-original="{{ item.value }}">
+                                <input type="hidden" name="{{ item.key }}_bool" value="false">
+                                <div
+                                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
+                                </div>
+                            </label>
+                        </div>
+                        {% else %}
+                        <input type="text" name="{{ item.key }}" id="prop-{{ item.key }}" value="{{ item.value }}"
+                            data-original="{{ item.value }}"
+                            class="w-full px-3 py-2 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all prop-input">
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="col-span-full text-center py-8 text-gray-500">
+                        <p>No properties found. Create server.properties to configure your server.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- Floating Save Bar -->
+    <div id="save-bar" class="fixed bottom-0 left-0 right-0 z-50 hidden">
+        <div class="max-w-5xl mx-auto px-4 py-4">
+            <div class="glass rounded-xl px-6 py-4 flex items-center justify-between save-bar shadow-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                    <span class="text-sm text-gray-300">You have unsaved changes</span>
+                    <span id="change-count" class="text-xs text-gray-500"></span>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" id="discard-btn"
+                        class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors text-sm font-medium">Discard</button>
+                    <button type="button" id="save-btn"
+                        class="px-6 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold transition-all text-sm flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Save Properties
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('properties-form');
+        const saveBar = document.getElementById('save-bar');
+        const changeCount = document.getElementById('change-count');
+        const inputs = document.querySelectorAll('.prop-input');
+        const searchInput = document.getElementById('search-input');
+        const propertyItems = document.querySelectorAll('.property-item');
+
+        // Search functionality
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase();
+            propertyItems.forEach(item => {
+                const key = item.dataset.key;
+                item.style.display = key.includes(query) ? '' : 'none';
+            });
+        });
+
+        // Change detection
+        function checkChanges() {
+            let changedCount = 0;
+            inputs.forEach(input => {
+                const original = input.dataset.original;
+                let current;
+                if (input.type === 'checkbox') {
+                    current = input.checked ? 'true' : 'false';
+                } else {
+                    current = input.value;
+                }
+                if (original !== current) {
+                    changedCount++;
+                    input.closest('.property-item')?.classList.add('border-amber-500/50');
+                } else {
+                    input.closest('.property-item')?.classList.remove('border-amber-500/50');
+                }
+            });
+
+            if (changedCount > 0) {
+                saveBar.classList.remove('hidden');
+                changeCount.textContent = `(${changedCount} changed)`;
+            } else {
+                saveBar.classList.add('hidden');
+            }
+        }
+
+        inputs.forEach(input => {
+            input.addEventListener('change', checkChanges);
+            input.addEventListener('input', checkChanges);
+        });
+
+        // Handle boolean checkboxes for form submission
+        form.addEventListener('submit', (e) => {
+            inputs.forEach(input => {
+                if (input.type === 'checkbox') {
+                    const hiddenInput = input.parentElement.querySelector('input[type="hidden"]');
+                    if (hiddenInput) {
+                        hiddenInput.value = input.checked ? 'true' : 'false';
+                        hiddenInput.name = input.name;
+                        input.removeAttribute('name');
                     }
-                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                return response.json();
-            })
-            .then(data => {
-                const currentStatusText = statusElement.textContent;
-                // Only update if the status has actually changed
-                if (currentStatusText !== data.status) {
-                    statusElement.textContent = data.status;
-                    const isRunning = data.status === 'Running';
-                    // Update class for styling (e.g., green/red background)
-                    statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+            });
+        });
 
-                    // If you ADDED start/stop buttons to these pages,
-                    // you would update their disabled state here too.
-                    // e.g., const startBtn = document.getElementById('start-button');
-                    //      if(startBtn) startBtn.disabled = isRunning;
+        document.getElementById('save-btn').addEventListener('click', () => form.submit());
+
+        document.getElementById('discard-btn').addEventListener('click', () => {
+            inputs.forEach(input => {
+                const original = input.dataset.original;
+                if (input.type === 'checkbox') {
+                    input.checked = original === 'true';
+                } else {
+                    input.value = original;
                 }
-            })
-            .catch(error => console.error('Error fetching status:', error));
-    }
+                input.closest('.property-item')?.classList.remove('border-amber-500/50');
+            });
+            saveBar.classList.add('hidden');
+        });
 
-    // Initial call to set status when page loads
-    updateStatus();
-
-    // Set interval to check status every 5 seconds (5000 milliseconds)
-    setInterval(updateStatus, 5000);
-
-    // --- Include other scripts like darkmode.js and toast.js ---
-    // Ensure these lines are also present, as they are in the originals:
-    // <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
-
-</script>
-    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script> {# <-- ADD THIS LINE #}
+        // Toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+        }
+        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+    </script>
 </body>
+
 </html>

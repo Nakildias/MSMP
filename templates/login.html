@@ -1,62 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Minecraft Server Manager</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    </head>
-<body>
-     <div class="auth-status">
-        {% if g.user %}
-            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-            <a href="{{ url_for('logout') }}">Logout</a>
-        {% else %}
-            <a href="{{ url_for('login') }}">Login</a> |
-            <a href="{{ url_for('register') }}">Register</a>
-        {% endif %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - {{ brand_name }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+
+    .glass {
+      background: rgba(17, 24, 39, 0.8);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(75, 85, 99, 0.4);
+    }
+
+    .toast-enter {
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .toast-exit {
+      animation: slideOut 0.3s ease-in forwards;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+
+      to {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    .float {
+      animation: float 6s ease-in-out infinite;
+    }
+  </style>
+</head>
+
+<body
+  class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen flex items-center justify-center p-4">
+  <!-- Background decoration -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl float"></div>
+    <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl float"
+      style="animation-delay: -3s;"></div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+
+  <!-- Hidden flash messages -->
+  <div id="toast-messages" class="hidden">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div data-category="{{ category }}" data-message="{{ message }}"></div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Login Card -->
+  <div class="glass rounded-2xl p-8 w-full max-w-md relative z-10">
+    <!-- Logo -->
+    <div class="flex flex-col items-center mb-8">
+      {% if has_custom_icon %}
+      <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+        class="w-16 h-16 rounded-2xl mb-4 shadow-lg">
+      {% else %}
+      <div class="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg"
+        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      </div>
+      {% endif %}
+      <h1 class="text-2xl font-bold" style="color: {{ brand_color }}">
+        {{ brand_name }}
+      </h1>
+      <p class="text-gray-400 text-sm mt-1">Server Manager Panel</p>
     </div>
-     <div class="theme-toggle">
-        <label class="switch">
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-         <span class="theme-toggle-label">Dark Mode</span>
+
+    <!-- Form -->
+    <form method="post" class="space-y-5">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+
+      <div>
+        <label for="username" class="block text-sm font-medium text-gray-300 mb-2">Username</label>
+        <input type="text" name="username" id="username" required
+          class="w-full px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+          placeholder="Enter your username">
+      </div>
+
+      <div>
+        <label for="password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+        <input type="password" name="password" id="password" required
+          class="w-full px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+          placeholder="Enter your password">
+      </div>
+
+      <button type="submit"
+        class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold transition-all duration-200 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 hover:scale-[1.02]">
+        Sign In
+      </button>
+    </form>
+
+    <!-- Register link -->
+    <div class="mt-6 text-center">
+      <p class="text-gray-400 text-sm">
+        Don't have an account?
+        <a href="{{ url_for('register') }}"
+          class="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">Register</a>
+      </p>
     </div>
+  </div>
 
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
+  <script>
+    // Toast system
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
 
-    <div class="auth-form"> <h2>Login</h2>
+      const colors = {
+        success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
+        error: 'bg-red-500/20 border-red-500/50 text-red-300',
+        warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
+        info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+      };
 
-        {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
-        <div id="toast-messages" style="display: none;">
-          {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-              {% for category, message in messages %}
-                <div data-category="{{ category }}" data-message="{{ message }}"></div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
-        </div>
+      toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+      toast.innerHTML = `
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm">${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button>
+                </div>
+            `;
 
-        <form method="post">
-            {# Include next URL if redirected here #}
-            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
-            <div>
-                <label for="username">Username</label>
-                <input type="username" name="username" id="username" required> </div>
-            <div>
-                <label for="password">Password</label>
-                <input type="password" name="password" id="password" required> </div>
-            <button type="submit">Log In</button>
-        </form>
-        <div class="auth-links"> <p>Don't have an account? <a href="{{ url_for('register') }}">Register</a></p>
-        </div>
-    </div>
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('toast-enter');
+        toast.classList.add('toast-exit');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
 
-    {# Ensure darkmode.js and the new toast.js are linked #}
-    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+    // Load flashed messages
+    document.querySelectorAll('#toast-messages div[data-message]').forEach(el => {
+      showToast(el.dataset.message, el.dataset.category);
+    });
+  </script>
 </body>
+
 </html>

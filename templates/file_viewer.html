@@ -1,121 +1,914 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ 'Edit' if can_edit else 'View' }} File - {{ filename }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    </head>
-<body>
-     <div class="auth-status"> {% if g.user %}
-             <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-             <a href="{{ url_for('logout') }}">Logout</a>
-         {% else %}
-             <a href="{{ url_for('login') }}">Login</a> |
-             <a href="{{ url_for('register') }}">Register</a>
-         {% endif %}
-     </div>
-    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-        <span class="theme-toggle-label">Dark Mode</span>
-    </div>
-
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
-
-    <div class="file-content-wrapper"> <h1>{{ 'Edit' if can_edit else 'View' }} File: {{ filename }}</h1> <div class="nav-links" style="text-align: center;"> <a href="{{ url_for('files', subpath=filepath|dirname) }}">Back to File Manager</a> |
-             <a href="{{ url_for('index') }}">Back to Server Control</a>
-        </div>
-
-         {# MODIFIED: Hidden container for JavaScript to read flashed messages #}
-         <div id="toast-messages" style="display: none;">
-           {% with messages = get_flashed_messages(with_categories=true) %}
-             {% if messages %}
-               {% for category, message in messages %}
-                 <div data-category="{{ category }}" data-message="{{ message }}"></div>
-               {% endfor %}
-             {% endif %}
-           {% endwith %}
-         </div>
-
-        {# Use form only if editing is allowed #}
-        {% if can_edit %}
-            <form action="{{ url_for('save_file') }}" method="post" id="edit-form">
-                <input type="hidden" name="filepath" value="{{ filepath }}">
-
-                <div class="file-edit-area"> <h2>Editing {{ filename }}</h2>
-                    <p><em>MIME Type detected: {{ mimetype }}</em></p>
-                    <p class="warning">Warning: Editing server files directly can break your server if done incorrectly. Save changes with caution.</p>
-
-                    <textarea name="content" id="file_content_editor" spellcheck="false">{{ content }}</textarea> <div class="save-button-container"> <button type="submit">Save Changes</button>
-                    </div>
-                </div>
-            </form>
-        {% else %}
-            {# Display read-only content if not editable #}
-             <div class="file-view-area"> <h2>Viewing {{ filename }}</h2>
-                 <p><em>MIME Type detected: {{ mimetype }}</em></p>
-                 <p class="view-only-notice">This file type is view-only.</p> {# Use pre for viewing to preserve formatting #}
-                 <pre id="file_content_viewer"><code>{{ content }}</code></pre> </div>
-        {% endif %}
-    </div>
-<script>
-    // Select the status element
-    const statusElement = document.getElementById('server-status');
-
-    // Function to fetch and update status
-    function updateStatus() {
-        // Ensure the element exists before fetching
-        if (!statusElement) {
-            console.warn('Status element not found on this page.');
-            return;
+    <title>{{ 'Edit' if can_edit else 'View' }} - {{ filename }} - {{ brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
         }
 
-        fetch("{{ url_for('status_api') }}") // Make sure the API endpoint is correct
-            .then(response => {
-                if (!response.ok) {
-                    // Handle potential errors like 401 Unauthorized if session expired
-                    if (response.status === 401) {
-                        console.warn("Status API access denied. User might be logged out.");
-                        // Optional: redirect to login or show a message
-                    }
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                const currentStatusText = statusElement.textContent;
-                // Only update if the status has actually changed
-                if (currentStatusText !== data.status) {
-                    statusElement.textContent = data.status;
-                    const isRunning = data.status === 'Running';
-                    // Update class for styling (e.g., green/red background)
-                    statusElement.className = isRunning ? 'status-running' : 'status-stopped';
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
 
-                    // If you ADDED start/stop buttons to these pages,
-                    // you would update their disabled state here too.
-                    // e.g., const startBtn = document.getElementById('start-button');
-                    //      if(startBtn) startBtn.disabled = isRunning;
-                }
-            })
-            .catch(error => console.error('Error fetching status:', error));
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+
+        .toast-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast-exit {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .save-bar {
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .line-numbers {
+            padding: 1rem 0.75rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-right: 1px solid rgba(75, 85, 99, 0.4);
+            text-align: right;
+            user-select: none;
+            font-size: 0.875rem;
+            line-height: 1.5rem;
+            color: #6b7280;
+            overflow: hidden;
+        }
+
+        #file_content_editor,
+        #file_content_viewer {
+            font-size: 0.875rem;
+            line-height: 1.5rem;
+            tab-size: 4;
+        }
+    </style>
+</head>
+
+<body
+    class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100 {% if can_edit and not popup_mode %}pb-24{% endif %}">
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+    <div id="toast-messages" class="hidden">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}<div data-category="{{ category }}"
+            data-message="{{ message }}"></div>{% endfor %}{% endif %}
+        {% endwith %}
+    </div>
+
+    {% if not popup_mode %}
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    {% if has_custom_icon %}
+                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                        class="w-10 h-10 rounded-xl shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                </a>
+            </div>
+            <nav class="flex items-center gap-1">
+                <!-- Navigation Links -->
+                <a href="{{ url_for('index') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                <a href="{{ url_for('files') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                <a href="{{ url_for('server_properties') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                <a href="{{ url_for('server_settings') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                {% if g.user %}
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}"
+                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                    title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+    {% endif %}
+
+    {% if popup_mode %}
+    <!-- Popup Mode: Fullscreen Editor -->
+    <div class="fixed inset-0 flex flex-col">
+        <!-- Minimal floating title bar -->
+        <div class="flex items-center justify-between px-4 py-2 bg-gray-900/90 backdrop-blur border-b border-gray-800">
+            <div class="flex items-center gap-3">
+                <span class="text-amber-400">📄</span>
+                <span class="text-sm font-medium text-white">{{ filename }}</span>
+                {% if can_edit %}
+                <span
+                    class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-medium">editing</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2">
+                {% if can_edit %}
+                <button type="button" id="popup-save-btn"
+                    class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-medium text-sm flex items-center gap-2 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    Save
+                </button>
+                {% endif %}
+                <button onclick="window.close()"
+                    class="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                    title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <!-- Editor fills remaining space -->
+        <div id="editor" class="flex-1 bg-gray-900/50 text-sm overflow-hidden"></div>
+
+        <!-- Hidden form for saving -->
+        <form action="{{ url_for('save_file') }}" method="post" id="editor-form" class="hidden">
+            <input type="hidden" name="filepath" value="{{ filepath }}">
+            <textarea name="content" id="hidden-content"></textarea>
+        </form>
+    </div>
+    {% else %}
+    <!-- Normal Mode: With header and padding -->
+    <main class="pt-24 pb-8 px-4 max-w-7xl mx-auto">
+        <div class="glass rounded-2xl overflow-hidden relative group">
+            <!-- File header -->
+            <div class="bg-gray-800/50 px-4 py-3 border-b border-gray-700/50 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-gray-400">📄</span>
+                        <span class="text-sm font-medium text-white">{{ filename }}</span>
+                        {% if can_edit %}
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-medium">editable</span>
+                        {% else %}
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-gray-700 text-gray-400 text-xs font-medium">read-only</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <span class="text-xs text-gray-500">{{ mimetype }}</span>
+            </div>
+
+            <!-- CM Editor Container -->
+            <div id="editor" class="min-h-[70vh] bg-gray-900/50 text-sm"></div>
+
+            <!-- Hidden form for saving -->
+            <form action="{{ url_for('save_file') }}" method="post" id="editor-form" class="hidden">
+                <input type="hidden" name="filepath" value="{{ filepath }}">
+                <textarea name="content" id="hidden-content"></textarea>
+            </form>
+        </div>
+    </main>
+    {% endif %}
+
+    {% if can_edit and not popup_mode %}
+    <!-- Floating Save Bar (normal mode only) -->
+    <div id="save-bar"
+        class="fixed bottom-0 left-0 right-0 z-50 hidden transition-transform duration-300 translate-y-full">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="glass rounded-xl px-6 py-4 flex items-center justify-between save-bar shadow-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                    <span class="text-sm text-gray-300">Unsaved changes</span>
+                    <span class="text-xs text-amber-400">⚠️ Changes may break server</span>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" id="discard-btn"
+                        class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors text-sm font-medium">Discard</button>
+                    <button type="button" id="save-btn"
+                        class="px-6 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold transition-all text-sm flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                        </svg>
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if can_edit %}
+    <!-- Diff Confirmation Modal -->
+    <div id="diff-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-gray-950/90 backdrop-blur-sm" onclick="closeDiffModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none overflow-auto">
+            <div
+                class="glass rounded-2xl w-full max-w-4xl max-h-[85vh] pointer-events-auto shadow-2xl border border-gray-600/30 flex flex-col my-4">
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700/50">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Review Changes</h3>
+                            <p class="text-gray-400 text-sm">Confirm before saving to <span class="text-emerald-400">{{
+                                    filename }}</span></p>
+                        </div>
+                    </div>
+                    <button onclick="closeDiffModal()"
+                        class="p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Stats Bar -->
+                <div class="flex items-center gap-4 px-6 py-3 bg-gray-800/30 border-b border-gray-700/30">
+                    <div class="flex items-center gap-2">
+                        <span class="text-emerald-400 font-mono text-sm" id="diff-additions">+0</span>
+                        <span class="text-gray-500 text-xs">additions</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-red-400 font-mono text-sm" id="diff-deletions">-0</span>
+                        <span class="text-gray-500 text-xs">deletions</span>
+                    </div>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <span class="text-gray-400 font-mono text-sm" id="diff-total">0 lines changed</span>
+                    </div>
+                </div>
+
+                <!-- Diff Content -->
+                <div id="diff-content"
+                    class="flex-1 overflow-auto font-mono text-sm bg-gray-900/50 p-4 min-h-[200px] max-h-[50vh]">
+                    <!-- Diff lines will be inserted here -->
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="flex items-center justify-between px-6 py-4 border-t border-gray-700/50">
+                    <p class="text-xs text-amber-400 flex items-center gap-1">
+                        <span>⚠️</span> Changes may affect server functionality
+                    </p>
+                    <div class="flex gap-3">
+                        <button onclick="closeDiffModal()"
+                            class="px-5 py-2.5 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-700 transition-colors font-medium">
+                            Cancel
+                        </button>
+                        <button onclick="confirmSave()" id="confirm-save-btn"
+                            class="px-6 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold transition-all flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5 13l4 4L19 7" />
+                            </svg>
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .diff-line {
+            padding: 2px 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .diff-added {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border-left: 3px solid #22c55e;
+        }
+
+        .diff-removed {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border-left: 3px solid #ef4444;
+        }
+
+        .diff-context {
+            color: #9ca3af;
+            border-left: 3px solid transparent;
+        }
+
+        .diff-line-num {
+            display: inline-block;
+            width: 40px;
+            text-align: right;
+            padding-right: 12px;
+            color: #6b7280;
+            user-select: none;
+        }
+    </style>
+    {% endif %}
+
+    <!-- CodeMirror Import Map -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
+        "@codemirror/view": "https://esm.sh/@codemirror/view@6.28.1?external=@codemirror/state,@lezer/common",
+        "@codemirror/language": "https://esm.sh/@codemirror/language@6.10.2?external=@codemirror/state,@codemirror/view,@lezer/common,@lezer/highlight,@lezer/lr",
+        "@codemirror/commands": "https://esm.sh/@codemirror/commands@6.6.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
+        "@codemirror/search": "https://esm.sh/@codemirror/search@6.5.6?external=@codemirror/state,@codemirror/view",
+        "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6.17.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
+        "@codemirror/lint": "https://esm.sh/@codemirror/lint@6.8.1?external=@codemirror/state,@codemirror/view",
+        "@codemirror/lang-python": "https://esm.sh/@codemirror/lang-python@6.1.6?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6.2.2?external=@codemirror/state,@codemirror/language,@codemirror/view,@codemirror/autocomplete,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6.0.1?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-yaml": "https://esm.sh/@codemirror/lang-yaml@6.0.0?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@lezer/common": "https://esm.sh/@lezer/common@1.2.1",
+        "@lezer/highlight": "https://esm.sh/@lezer/highlight@1.2.0?external=@lezer/common",
+        "@lezer/lr": "https://esm.sh/@lezer/lr@1.4.1?external=@lezer/common"
+      }
     }
+    </script>
 
-    // Initial call to set status when page loads
-    updateStatus();
+    <!-- CodeMirror & Logic -->
+    <script type="module">
+        import { EditorView, keymap, drawSelection, highlightActiveLine, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, highlightActiveLineGutter } from "@codemirror/view";
+        import { EditorState } from "@codemirror/state";
+        import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+        import { searchKeymap, search, openSearchPanel } from "@codemirror/search";
+        import { indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap, HighlightStyle, StreamLanguage } from "@codemirror/language";
+        import { closeBrackets, autocompletion, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+        import { lintKeymap } from "@codemirror/lint";
+        import { tags } from "@lezer/highlight";
 
-    // Set interval to check status every 5 seconds (5000 milliseconds)
-    setInterval(updateStatus, 5000);
+        // Import plugins via bare specifiers
+        import { python } from "@codemirror/lang-python";
+        import { javascript } from "@codemirror/lang-javascript";
+        import { json } from "@codemirror/lang-json";
+        import { yaml } from "@codemirror/lang-yaml";
 
-    // --- Include other scripts like darkmode.js and toast.js ---
-    // Ensure these lines are also present, as they are in the originals:
-    // <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+        // Inject initial content safely
+        let initialContent = {{ content | tojson }};
+        const canEdit = {{ 'true' if can_edit else 'false' }};
+        const filename = "{{ filename }}";
 
-</script>
-<script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-<script src="{{ url_for('static', filename='toast.js') }}"></script>
+        // Determine language extension
+        let languageExtension = [];
+        if (filename.endsWith('.py')) languageExtension = python();
+        else if (filename.endsWith('.js')) languageExtension = javascript();
+        else if (filename.endsWith('.json')) languageExtension = json();
+        else if (filename.endsWith('.yml') || filename.endsWith('.yaml')) languageExtension = yaml();
+        else if (filename.endsWith('.properties')) {
+            // Simple properties file mode
+            const propertiesMode = {
+                token(stream) {
+                    if (stream.sol() && stream.match(/^\s*#/)) { stream.skipToEnd(); return 'comment'; }
+                    if (stream.sol() && stream.match(/^\s*!/)) { stream.skipToEnd(); return 'comment'; }
+                    if (stream.match(/^[^=:]+(?=[=:])/)) return 'propertyName';
+                    if (stream.match(/^[=:]/)) return 'operator';
+                    stream.next();
+                    return 'string';
+                }
+            };
+            languageExtension = StreamLanguage.define(propertiesMode);
+        }
+
+        // Theme and Editor Setup
+        const parent = document.querySelector("#editor");
+
+        const popupMode = {{ 'true' if popup_mode else 'false' }};
+
+        // Use manual One Dark definition to avoid dependency conflicts
+        const nebulaTheme = EditorView.theme({
+            "&": { height: popupMode ? "100%" : "70vh", fontSize: "14px" },
+            ".cm-scroller": { fontFamily: "'JetBrains Mono', monospace", overflow: "auto" },
+            ".cm-content": { caretColor: "#528bff" },
+            ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#528bff" },
+            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+                backgroundColor: "rgba(56, 139, 253, 0.3)"
+            },
+            ".cm-gutters": {
+                backgroundColor: "rgba(0, 0, 0, 0.2)",
+                color: "#5c6370",
+                border: "none"
+            },
+            ".cm-activeLineGutter": { backgroundColor: "rgba(75, 85, 99, 0.3)" },
+            ".cm-activeLine": { backgroundColor: "rgba(75, 85, 99, 0.15)" },
+            ".cm-panels": {
+                backgroundColor: "transparent",
+                border: "none",
+                position: "absolute",
+                top: "8px",
+                right: "12px",
+                zIndex: "100",
+                left: "auto !important",
+                width: "auto !important"
+            },
+            ".cm-panels-top": {
+                position: "absolute !important",
+                top: "8px !important",
+                right: "12px !important",
+                left: "auto !important",
+                borderBottom: "none !important"
+            },
+            // Main search container - grid layout for clean rows
+            ".cm-search": {
+                backgroundColor: "rgba(17, 24, 39, 0.97) !important",
+                backdropFilter: "blur(16px)",
+                border: "1px solid rgba(75, 85, 99, 0.4) !important",
+                borderRadius: "10px !important",
+                padding: "10px 12px !important",
+                boxShadow: "0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05) inset",
+                color: "#e5e7eb !important",
+                display: "grid !important",
+                gridTemplateColumns: "1fr auto !important",
+                gap: "8px 6px !important",
+                width: "320px !important",
+                fontSize: "12px !important"
+            },
+            // Hide breaks
+            ".cm-search br": { display: "none !important" },
+            // Input styling - main find/replace fields
+            ".cm-search input[name=search]": {
+                gridColumn: "1 !important",
+                gridRow: "1 !important"
+            },
+            ".cm-search input[name=replace]": {
+                gridColumn: "1 / -1 !important",
+                gridRow: "3 !important"
+            },
+            ".cm-search input[type=text], .cm-textfield": {
+                backgroundColor: "rgba(31, 41, 55, 0.8) !important",
+                border: "1px solid rgba(75, 85, 99, 0.5) !important",
+                borderRadius: "6px !important",
+                padding: "6px 10px !important",
+                color: "white !important",
+                outline: "none !important",
+                fontSize: "13px !important",
+                width: "100% !important",
+                height: "30px !important",
+                boxSizing: "border-box !important"
+            },
+            ".cm-search input[type=text]:focus, .cm-textfield:focus": {
+                borderColor: "rgba(139, 92, 246, 0.7) !important",
+                boxShadow: "0 0 0 2px rgba(139, 92, 246, 0.15) !important"
+            },
+            ".cm-search input[type=text]::placeholder": {
+                color: "#6b7280 !important"
+            },
+            // Close button - positioned top right
+            ".cm-search button[name=close]": {
+                gridColumn: "2 !important",
+                gridRow: "1 !important",
+                width: "30px !important",
+                height: "30px !important",
+                padding: "0 !important",
+                display: "flex !important",
+                alignItems: "center !important",
+                justifyContent: "center !important",
+                backgroundColor: "transparent !important",
+                border: "none !important",
+                borderRadius: "6px !important",
+                color: "#9ca3af !important",
+                cursor: "pointer !important",
+                fontSize: "16px !important",
+                transition: "all 0.15s ease !important"
+            },
+            ".cm-search button[name=close]:hover": {
+                backgroundColor: "rgba(239, 68, 68, 0.2) !important",
+                color: "#ef4444 !important"
+            },
+            // Navigation buttons row
+            ".cm-search button[name=next], .cm-search button[name=prev], .cm-search button[name=select]": {
+                height: "26px !important",
+                padding: "0 10px !important",
+                fontSize: "11px !important",
+                fontWeight: "500 !important"
+            },
+            // All buttons base styling
+            ".cm-search button, .cm-button": {
+                backgroundColor: "rgba(55, 65, 81, 0.7) !important",
+                border: "none !important",
+                borderRadius: "5px !important",
+                color: "#d1d5db !important",
+                padding: "5px 10px !important",
+                cursor: "pointer !important",
+                fontSize: "11px !important",
+                fontWeight: "500 !important",
+                height: "26px !important",
+                lineHeight: "1 !important",
+                backgroundImage: "none !important",
+                transition: "all 0.15s ease !important",
+                whiteSpace: "nowrap !important"
+            },
+            ".cm-search button:hover, .cm-button:hover": {
+                backgroundColor: "rgba(75, 85, 99, 0.9) !important",
+                color: "#f3f4f6 !important"
+            },
+            // Replace buttons - accent color
+            ".cm-search button[name=replace], .cm-search button[name=replaceAll]": {
+                backgroundColor: "rgba(99, 102, 241, 0.3) !important",
+                color: "#a5b4fc !important"
+            },
+            ".cm-search button[name=replace]:hover, .cm-search button[name=replaceAll]:hover": {
+                backgroundColor: "rgba(99, 102, 241, 0.5) !important",
+                color: "#c7d2fe !important"
+            },
+            // Checkbox labels - options row
+            ".cm-search label": {
+                display: "inline-flex !important",
+                alignItems: "center !important",
+                gap: "4px !important",
+                fontSize: "11px !important",
+                color: "#9ca3af !important",
+                whiteSpace: "nowrap !important",
+                cursor: "pointer !important",
+                padding: "2px 4px !important",
+                borderRadius: "4px !important",
+                transition: "color 0.15s ease !important"
+            },
+            ".cm-search label:hover": {
+                color: "#d1d5db !important"
+            },
+            ".cm-search input[type=checkbox]": {
+                width: "14px !important",
+                height: "14px !important",
+                margin: "0 !important",
+                accentColor: "#8b5cf6 !important",
+                cursor: "pointer !important"
+            },
+            // Panel positioning reset
+            ".cm-panel.cm-search [name=close]": {
+                position: "static !important"
+            }
+        }, { dark: true });
+
+        const myHighlightStyle = HighlightStyle.define([
+            { tag: tags.keyword, color: "#c678dd" },
+            { tag: [tags.name, tags.deleted, tags.character, tags.propertyName, tags.macroName], color: "#e06c75" },
+            { tag: [tags.function(tags.variableName), tags.labelName], color: "#61afef" },
+            { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)], color: "#d19a66" },
+            { tag: [tags.definition(tags.name), tags.separator], color: "#abb2bf" },
+            { tag: [tags.typeName, tags.className, tags.number, tags.changed, tags.annotation, tags.modifier, tags.self, tags.namespace], color: "#e5c07b" },
+            { tag: [tags.operator, tags.operatorKeyword, tags.url, tags.escape, tags.regexp, tags.link, tags.special(tags.string)], color: "#56b6c2" },
+            { tag: [tags.meta, tags.comment], color: "#5c6370", fontStyle: "italic" },
+            { tag: tags.strong, fontWeight: "bold" },
+            { tag: tags.emphasis, fontStyle: "italic" },
+            { tag: tags.strikethrough, textDecoration: "line-through" },
+            { tag: tags.link, color: "#56b6c2", textDecoration: "underline" },
+            { tag: tags.heading, fontWeight: "bold", color: "#e06c75" },
+            { tag: [tags.atom, tags.bool, tags.special(tags.variableName)], color: "#d19a66" },
+            { tag: [tags.processingInstruction, tags.string, tags.inserted], color: "#98c379" },
+            { tag: tags.invalid, color: "#ffffff" }
+        ]);
+
+        const myBasicSetup = [
+            lineNumbers(),
+            highlightActiveLineGutter(),
+            history(),
+            drawSelection(),
+            dropCursor(),
+            EditorState.allowMultipleSelections.of(true),
+            indentOnInput(),
+            syntaxHighlighting(myHighlightStyle, { fallback: true }),
+            bracketMatching(),
+            closeBrackets(),
+            autocompletion(),
+            rectangularSelection(),
+            crosshairCursor(),
+            highlightActiveLine(),
+            keymap.of([
+                ...closeBracketsKeymap,
+                ...defaultKeymap,
+                ...searchKeymap,
+                ...historyKeymap,
+                ...foldKeymap,
+                ...completionKeymap,
+                ...lintKeymap
+            ])
+        ];
+
+        // Extensions
+        const extensions = [
+            myBasicSetup,
+            languageExtension,
+            nebulaTheme,
+            search({ top: true }), // Setup search command
+            EditorView.updateListener.of(update => {
+                if (update.docChanged && canEdit) {
+                    checkChanges(update.state.doc.toString());
+                }
+            }),
+            EditorState.readOnly.of(!canEdit),
+            keymap.of([
+                {
+                    key: "Mod-f",
+                    run: openSearchPanel,
+                    preventDefault: true
+                },
+                {
+                    key: "Mod-s",
+                    run: () => {
+                        saveFile();
+                        return true;
+                    },
+                    preventDefault: true
+                }
+            ])
+        ];
+
+        // Create View
+        const view = new EditorView({
+            doc: initialContent,
+            extensions: extensions,
+            parent: parent
+        });
+
+        // Save & Change Detection Logic
+        const saveBar = document.getElementById('save-bar');
+        const popupSaveBtn = document.getElementById('popup-save-btn');
+        const diffModal = document.getElementById('diff-modal');
+        const filepath = '{{ filepath }}';
+
+        // Simple line-by-line diff algorithm
+        function computeDiff(oldText, newText) {
+            const oldLines = oldText.split('\n');
+            const newLines = newText.split('\n');
+            const diff = [];
+            let additions = 0, deletions = 0;
+
+            // Use a simple LCS-based approach for minimal diff
+            const lcs = [];
+            for (let i = 0; i <= oldLines.length; i++) {
+                lcs[i] = [];
+                for (let j = 0; j <= newLines.length; j++) {
+                    if (i === 0 || j === 0) lcs[i][j] = 0;
+                    else if (oldLines[i - 1] === newLines[j - 1]) lcs[i][j] = lcs[i - 1][j - 1] + 1;
+                    else lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+                }
+            }
+
+            // Backtrack to find the diff
+            let i = oldLines.length, j = newLines.length;
+            const result = [];
+
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+                    result.unshift({ type: 'context', line: oldLines[i - 1], oldNum: i, newNum: j });
+                    i--; j--;
+                } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+                    result.unshift({ type: 'added', line: newLines[j - 1], newNum: j });
+                    additions++;
+                    j--;
+                } else {
+                    result.unshift({ type: 'removed', line: oldLines[i - 1], oldNum: i });
+                    deletions++;
+                    i--;
+                }
+            }
+
+            // Filter to show only changed lines with context
+            const filtered = [];
+            for (let k = 0; k < result.length; k++) {
+                const item = result[k];
+                if (item.type !== 'context') {
+                    filtered.push(item);
+                } else {
+                    // Add context lines near changes
+                    const nearChange = result.slice(Math.max(0, k - 2), Math.min(result.length, k + 3))
+                        .some(r => r.type !== 'context');
+                    if (nearChange) filtered.push(item);
+                }
+            }
+
+            return { lines: filtered.length > 0 ? filtered : result.slice(0, 20), additions, deletions };
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function renderDiff(diffResult) {
+            const container = document.getElementById('diff-content');
+            document.getElementById('diff-additions').textContent = '+' + diffResult.additions;
+            document.getElementById('diff-deletions').textContent = '-' + diffResult.deletions;
+            document.getElementById('diff-total').textContent =
+                (diffResult.additions + diffResult.deletions) + ' lines changed';
+
+            let html = '';
+            for (const item of diffResult.lines) {
+                const lineNum = item.type === 'removed' ? item.oldNum : (item.newNum || '');
+                const prefix = item.type === 'added' ? '+' : (item.type === 'removed' ? '-' : ' ');
+                const className = item.type === 'added' ? 'diff-added' :
+                    (item.type === 'removed' ? 'diff-removed' : 'diff-context');
+                html += `<div class="diff-line ${className}"><span class="diff-line-num">${lineNum}</span>${prefix} ${escapeHtml(item.line)}</div>`;
+            }
+            container.innerHTML = html || '<div class="text-gray-500 text-center p-8">No visible changes</div>';
+        }
+
+        window.showDiffModal = () => {
+            if (!canEdit) return;
+            const currentContent = view.state.doc.toString();
+            if (currentContent === initialContent) {
+                showToast('No changes to save', 'info');
+                return;
+            }
+            const diffResult = computeDiff(initialContent, currentContent);
+            renderDiff(diffResult);
+            diffModal.classList.remove('hidden');
+        };
+
+        window.closeDiffModal = () => {
+            diffModal.classList.add('hidden');
+        };
+
+        window.confirmSave = async () => {
+            if (!canEdit) return;
+            const currentContent = view.state.doc.toString();
+            closeDiffModal();
+
+            // Show saving state
+            const saveBtn = document.getElementById('confirm-save-btn');
+            if (saveBtn) saveBtn.disabled = true;
+
+            try {
+                const response = await fetch('{{ url_for("api_save_file") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filepath: filepath, content: currentContent })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    // Update initial content to current (no more unsaved changes)
+                    initialContent = currentContent;
+                    if (saveBar) {
+                        saveBar.classList.add('translate-y-full');
+                        setTimeout(() => saveBar.classList.add('hidden'), 300);
+                    }
+                } else {
+                    showToast(data.message, 'error');
+                }
+            } catch (err) {
+                showToast('Failed to save: ' + err.message, 'error');
+            }
+
+            if (saveBtn) saveBtn.disabled = false;
+        };
+
+        // Legacy saveFile now opens diff modal
+        window.saveFile = () => {
+            showDiffModal();
+        };
+
+        window.checkChanges = (currentContent) => {
+            const hasChanges = currentContent !== initialContent;
+            if (saveBar) {
+                if (hasChanges) {
+                    saveBar.classList.remove('hidden', 'translate-y-full');
+                } else {
+                    saveBar.classList.add('translate-y-full');
+                    setTimeout(() => saveBar.classList.add('hidden'), 300);
+                }
+            }
+        };
+
+        if (canEdit) {
+            // Normal mode buttons
+            document.getElementById('save-btn')?.addEventListener('click', showDiffModal);
+            document.getElementById('discard-btn')?.addEventListener('click', () => {
+                view.dispatch({
+                    changes: { from: 0, to: view.state.doc.length, insert: initialContent }
+                });
+                if (saveBar) saveBar.classList.add('translate-y-full');
+            });
+
+            // Popup mode save button
+            if (popupSaveBtn) {
+                popupSaveBtn.addEventListener('click', showDiffModal);
+            }
+
+            // Close diff modal on Escape
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && diffModal && !diffModal.classList.contains('hidden')) {
+                    closeDiffModal();
+                }
+            });
+
+            // Prevent leaving with unsaved changes
+            window.addEventListener('beforeunload', (e) => {
+                if (view.state.doc.toString() !== initialContent) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            });
+        }
+
+        // Toast notification helper
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = {
+                success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
+                error: 'bg-red-500/20 border-red-500/50 text-red-300',
+                warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
+                info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+            };
+            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 backdrop-blur-sm animate-pulse`;
+            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 4000);
+        }
+    </script>
 </body>
+
 </html>

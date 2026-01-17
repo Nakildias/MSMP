@@ -1,187 +1,1020 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Settings</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="color-scheme" content="dark">
+    <title>Server Settings - {{ brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
-        /* Add some specific styles for this page */
-        .settings-form {
-            max-width: 1000px; margin: 20px auto; background-color: #fff; padding: 20px 30px; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        body {
+            font-family: 'Inter', sans-serif;
         }
-        .settings-form h1 { margin-bottom: 20px; text-align: center; }
-        .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; margin-bottom: 20px; }
-        .setting-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; }
-        .setting-item label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; word-wrap: break-word; }
-        .setting-item input[type="text"],
-        .setting-item input[type="number"],
-        .setting-item textarea { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
-        .setting-item input[type="checkbox"] { width: auto; margin-right: 10px; transform: scale(1.2); vertical-align: middle;}
-        .setting-item textarea { min-height: 80px; font-family: monospace; }
-        .setting-item small { display: block; font-size: 0.85em; color: #666; margin-top: 5px; }
-        .setting-item .path-display { background-color: #e9ecef; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #555; word-wrap: break-word; }
 
-        .button-container { margin-top: 20px; text-align: center; padding-top: 20px; border-top: 1px solid #eee; }
-        .button-container.restart { margin-top: 30px; border-top: 1px solid #f5c6cb; } /* Add specific style for restart */
-        .button-container button { padding: 12px 25px; font-weight: bold; font-size: 1.1em; cursor: pointer; margin: 0 10px; }
-        .button-container button.save { background-color: #28a745; }
-        .button-container button.save:hover { background-color: #218838; }
-        .button-container button.restart-btn { background-color: #dc3545; } /* Use stop button color */
-        .button-container button.restart-btn:hover { background-color: #c82333; } /* Use stop button hover color */
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
 
-        /* Dark mode adjustments */
-        body.dark-mode .settings-form { background-color: #1e1e1e; border-color: #333; }
-        body.dark-mode .setting-item { border-color: #333; }
-        body.dark-mode .setting-item label { color: #ccc; }
-        body.dark-mode .setting-item input[type="text"],
-        body.dark-mode .setting-item input[type="number"],
-        body.dark-mode .setting-item textarea { background-color: #333; border-color: #555; color: #e0e0e0; }
-        body.dark-mode .setting-item input[type="checkbox"] { background-color: #333; border-color: #555; /* May need more specific styling */ }
-        body.dark-mode .setting-item small { color: #aaa; }
-        body.dark-mode .setting-item .path-display { background-color: #2a2a2a; border-color: #444; color: #bbb; }
-        body.dark-mode .button-container { border-top-color: #333; }
-        body.dark-mode .button-container.restart { border-top-color: #a02b36; }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+
+        .toast-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast-exit {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .save-bar {
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .tag-input-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            background-color: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            font-size: 0.875rem;
+        }
+
+        .tag-remove {
+            margin-left: 0.25rem;
+            cursor: pointer;
+            opacity: 0.6;
+        }
+
+        .tag-remove:hover {
+            opacity: 1;
+        }
+
+        /* Custom styled select dropdowns */
+        .custom-select {
+            position: relative;
+        }
+
+        .custom-select select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-color: rgba(31, 41, 55, 0.5);
+            color: #f3f4f6;
+            padding-right: 2.5rem;
+            color-scheme: dark;
+        }
+
+        .custom-select select option {
+            background-color: #1f2937 !important;
+            color: #f3f4f6 !important;
+        }
+
+        .custom-select select:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+            border-color: #10b981;
+        }
     </style>
 </head>
-<body>
-    <div class="auth-status">
-        {% if g.user %}
-            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-            <a href="{{ url_for('logout') }}">Logout</a>
-        {% else %}
-            <a href="{{ url_for('login') }}">Login</a> |
-            <a href="{{ url_for('register') }}">Register</a>
-        {% endif %}
-    </div>
-    <div class="theme-toggle">
-        <label class="switch">
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-        <span class="theme-toggle-label">Dark Mode</span>
+
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100 pb-24">
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+    <div id="toast-messages" class="hidden">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}<div data-category="{{ category }}"
+            data-message="{{ message }}"></div>{% endfor %}{% endif %}
+        {% endwith %}
     </div>
 
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
-
-    <div class="settings-form">
-        <h1>Panel Settings</h1>
-
-        <div class="nav-links">
-            <a href="{{ url_for('index') }}">Back to Server Control</a>
-        </div>
-
-        {# Hidden container for JavaScript to read flashed messages #}
-        <div id="toast-messages" style="display: none;">
-          {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-              {% for category, message in messages %}
-                <div data-category="{{ category }}" data-message="{{ message }}"></div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
-        </div>
-
-        <p class="warning">Some settings might require restarting the "Panel" to take effect.</p>
-
-        <form method="post" action="{{ url_for('server_settings') }}">
-            <div class="settings-grid">
-
-                <div class="setting-item">
-                    <label for="setting-AUTOSTART_SERVER">
-                        <input type="checkbox" id="setting-AUTOSTART_SERVER" name="AUTOSTART_SERVER" {% if settings.AUTOSTART_SERVER %}checked{% endif %}>
-                        AUTOSTART_SERVER (Minecraft Server)
-                    </label>
-                    <small>Automatically start the Minecraft server when the manager starts.</small>
-                </div>
-                <div class="setting-item">
-                    <label for="setting-ENABLE_AUTO_RESTART_ON_CRASH">
-                        <input type="checkbox" id="setting-ENABLE_AUTO_RESTART_ON_CRASH" name="ENABLE_AUTO_RESTART_ON_CRASH" {% if settings.ENABLE_AUTO_RESTART_ON_CRASH %}checked{% endif %}>
-                        ENABLE_AUTO_RESTART_ON_CRASH (Minecraft Server)
-                    </label>
-                    <small>Automatically restart the Minecraft server if it crashes unexpectedly.</small>
-                </div>
-                <div class="setting-item">
-                    <label for="setting-ALLOW_REGISTRATION">
-                        <input type="checkbox" id="setting-ALLOW_REGISTRATION" name="ALLOW_REGISTRATION" {% if settings.ALLOW_REGISTRATION %}checked{% endif %}>
-                        ALLOW_REGISTRATION
-                    </label>
-                    <small>Allow new users to register through the web interface.</small>
-                </div>
-
-                <div class="setting-item">
-                    <label for="setting-SERVER_JAR_NAME">SERVER_JAR_NAME</label>
-                    <input type="text" id="setting-SERVER_JAR_NAME" name="SERVER_JAR_NAME" value="{{ settings.SERVER_JAR_NAME }}">
-                    <small>The exact filename of your server JAR file (e.g., server.jar, paper.jar).</small>
-                </div>
-                <div class="setting-item">
-                    <label for="setting-JAVA_EXECUTABLE">JAVA_EXECUTABLE</label>
-                    <input type="text" id="setting-JAVA_EXECUTABLE" name="JAVA_EXECUTABLE" value="{{ settings.JAVA_EXECUTABLE }}">
-                    <small>Command or path to the Java executable (e.g., 'java', '/usr/bin/java').</small>
-                </div>
-
-                <div class="setting-item">
-                    <label for="setting-MAX_LOG_LINES">MAX_LOG_LINES</label>
-                    <input type="number" id="setting-MAX_LOG_LINES" name="MAX_LOG_LINES" value="{{ settings.MAX_LOG_LINES }}" min="10">
-                    <small>Maximum number of log lines to display on the main page.</small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-MAX_VIEW_FILE_SIZE_MB">MAX_VIEW_FILE_SIZE_MB</label>
-                    <input type="number" id="setting-MAX_VIEW_FILE_SIZE_MB" name="MAX_VIEW_FILE_SIZE_MB" value="{{ settings.MAX_VIEW_FILE_SIZE_MB }}" min="1">
-                    <small>Maximum file size (in MB) allowed for viewing/editing in the browser.</small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-MAX_UPLOAD_SIZE_MB">MAX_UPLOAD_SIZE_MB</label>
-                    <input type="number" id="setting-MAX_UPLOAD_SIZE_MB" name="MAX_UPLOAD_SIZE_MB" value="{{ settings.MAX_UPLOAD_SIZE_MB }}" min="1">
-                    <small>Maximum file size (in MB) allowed for uploads.</small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-RESTART_DELAY_SECONDS">RESTART_DELAY_SECONDS (Minecraft Server)</label>
-                    <input type="number" id="setting-RESTART_DELAY_SECONDS" name="RESTART_DELAY_SECONDS" value="{{ settings.RESTART_DELAY_SECONDS }}" min="0">
-                    <small>Delay (in seconds) before attempting automatic restart after a crash.</small>
-                </div>
-
-                <div class="setting-item">
-                    <label for="setting-JAVA_ARGS">JAVA_ARGS</label>
-                    <textarea id="setting-JAVA_ARGS" name="JAVA_ARGS">{{ settings.JAVA_ARGS | join(',') }}</textarea>
-                    <small>Java arguments (e.g., -Xmx, -Xms), comma-separated. Example: <code>-Xmx4G,-Xms1G,-XX:+UseG1GC</code></small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-ALLOWED_VIEW_EXTENSIONS">ALLOWED_VIEW_EXTENSIONS</label>
-                    <textarea id="setting-ALLOWED_VIEW_EXTENSIONS" name="ALLOWED_VIEW_EXTENSIONS">{{ settings.ALLOWED_VIEW_EXTENSIONS | join(',') }}</textarea>
-                    <small>File extensions allowed for viewing (comma-separated, include leading dot). Example: <code>.txt,.log,.yml,.json</code></small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-ALLOWED_UPLOAD_EXTENSIONS">ALLOWED_UPLOAD_EXTENSIONS</label>
-                    <textarea id="setting-ALLOWED_UPLOAD_EXTENSIONS" name="ALLOWED_UPLOAD_EXTENSIONS">{{ settings.ALLOWED_UPLOAD_EXTENSIONS | join(',') }}</textarea>
-                    <small>File extensions allowed for uploading (comma-separated, no dot). Example: <code>jar,zip,yml,json,schem</code></small>
-                </div>
-                 <div class="setting-item">
-                    <label for="setting-ALLOWED_EDIT_EXTENSIONS">ALLOWED_EDIT_EXTENSIONS</label>
-                    <textarea id="setting-ALLOWED_EDIT_EXTENSIONS" name="ALLOWED_EDIT_EXTENSIONS">{{ settings.ALLOWED_EDIT_EXTENSIONS | join(',') }}</textarea>
-                    <small>File extensions allowed for editing (comma-separated, include leading dot). Example: <code>.txt,.yml,.json,.properties</code></small>
-                </div>
-
-                <div class="setting-item">
-                    <label>LOG_FILE (Effective Path)</label>
-                    <div class="path-display">{{ settings.LOG_FILE_DISPLAY }}</div>
-                    <small>Path to the server's log file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
-                </div>
-                <div class="setting-item">
-                    <label>DATABASE (Effective Path)</label>
-                    <div class="path-display">{{ settings.DATABASE_DISPLAY }}</div>
-                    <small>Path to the user database file (derived from MINECRAFT_SERVER_PATH, not directly editable here).</small>
-                </div>
-
-            </div> <div class="button-container">
-                <button type="submit" class="save">Save</button>
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    {% if has_custom_icon %}
+                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                        class="w-10 h-10 rounded-xl shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                </a>
             </div>
-        </form>
+            <nav class="flex items-center gap-1">
+                <!-- Navigation Links -->
+                <a href="{{ url_for('index') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                <a href="{{ url_for('files') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                <a href="{{ url_for('server_properties') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                <a href="{{ url_for('server_settings') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                {% if g.user %}
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}"
+                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                    title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
 
+    <main class="pt-24 pb-8 px-4 max-w-4xl mx-auto">
+        <div class="glass rounded-2xl p-8">
+            <h1 class="text-2xl font-bold mb-6">Manager Settings</h1>
+
+            <form method="post" id="settings-form" class="space-y-8">
+                <input type="hidden" name="otp_code" id="main-otp-input">
+
+                <!-- Branding Settings -->
+                <section>
+                    <h2 class="text-violet-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                        </svg>
+                        Branding
+                    </h2>
+                    <div class="grid gap-6">
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="BRAND_NAME" class="block text-sm font-medium text-gray-300 mb-2">Panel
+                                    Name</label>
+                                <input type="text" name="BRAND_NAME" id="BRAND_NAME"
+                                    value="{{ settings.get('BRAND_NAME', default_settings['BRAND_NAME']) }}"
+                                    placeholder="Nebula"
+                                    class="w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 setting-input"
+                                    data-original="{{ settings.get('BRAND_NAME', default_settings['BRAND_NAME']) }}">
+                            </div>
+                            <div>
+                                <label for="BRAND_COLOR" class="block text-sm font-medium text-gray-300 mb-2">Brand
+                                    Color</label>
+                                <div class="flex items-center gap-3">
+                                    <input type="color" name="BRAND_COLOR" id="BRAND_COLOR"
+                                        value="{{ settings.get('BRAND_COLOR', default_settings['BRAND_COLOR']) }}"
+                                        class="w-12 h-10 rounded-lg bg-transparent border border-gray-700 cursor-pointer setting-input"
+                                        data-original="{{ settings.get('BRAND_COLOR', default_settings['BRAND_COLOR']) }}">
+                                    <input type="text" id="BRAND_COLOR_HEX"
+                                        value="{{ settings.get('BRAND_COLOR', default_settings['BRAND_COLOR']) }}"
+                                        class="flex-1 px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 font-mono text-sm"
+                                        placeholder="#8b5cf6">
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="BRAND_ICON_URL" class="block text-sm font-medium text-gray-300 mb-2">Icon
+                                URL</label>
+                            <div class="flex items-center gap-3">
+                                <input type="text" name="BRAND_ICON_URL" id="BRAND_ICON_URL"
+                                    value="{{ settings.get('BRAND_ICON_URL', default_settings['BRAND_ICON_URL']) }}"
+                                    placeholder="https://example.com/icon.png"
+                                    class="flex-1 px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 setting-input"
+                                    data-original="{{ settings.get('BRAND_ICON_URL', default_settings['BRAND_ICON_URL']) }}">
+                                <button type="button" id="download-icon-btn"
+                                    class="px-4 py-2.5 rounded-lg bg-violet-600/20 text-violet-400 hover:bg-violet-600/30 transition-colors text-sm font-medium flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Download Icon
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">Enter a URL to an image and click Download to use it
+                                as the panel icon and favicon</p>
+                            {% if icon_exists %}
+                            <div
+                                class="mt-3 flex items-center gap-3 p-3 rounded-lg bg-gray-800/30 border border-gray-700/50">
+                                <img src="{{ url_for('static', filename='icon.png') }}?t={{ icon_mtime }}"
+                                    alt="Current icon" class="w-8 h-8 rounded">
+                                <span class="text-sm text-gray-400">Current icon loaded</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- General Settings -->
+                <section>
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6h16M4 12h16m-7 6h7" />
+                        </svg>
+                        General Configuration
+                    </h2>
+                    <div class="grid gap-6">
+                        <!-- Allow Registration -->
+                        <div
+                            class="flex items-center justify-between p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                            <div>
+                                <label for="ALLOW_REGISTRATION" class="font-medium text-gray-200">Allow
+                                    Registration</label>
+                                <p class="text-sm text-gray-400 mt-1">Enable user registration for the panel. <span
+                                        class="text-amber-400 text-xs">(Requires verification to re-enable)</span></p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="ALLOW_REGISTRATION" id="ALLOW_REGISTRATION"
+                                    class="sr-only peer setting-input" {% if settings.get('ALLOW_REGISTRATION',
+                                    default_settings['ALLOW_REGISTRATION']) %}checked{% endif %}
+                                    data-original="{{ 'true' if settings.get('ALLOW_REGISTRATION', default_settings['ALLOW_REGISTRATION']) else 'false' }}">
+                                <div
+                                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Autostart -->
+                        <div
+                            class="flex items-center justify-between p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                            <div>
+                                <label for="AUTOSTART_SERVER" class="font-medium text-gray-200">Autostart Server</label>
+                                <p class="text-sm text-gray-400 mt-1">Start Minecraft server automatically when panel
+                                    starts</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="AUTOSTART_SERVER" id="AUTOSTART_SERVER"
+                                    class="sr-only peer setting-input" {% if settings.get('AUTOSTART_SERVER',
+                                    default_settings['AUTOSTART_SERVER']) %}checked{% endif %}
+                                    data-original="{{ 'true' if settings.get('AUTOSTART_SERVER', default_settings['AUTOSTART_SERVER']) else 'false' }}">
+                                <div
+                                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Auto Restart Crash -->
+                        <div
+                            class="flex items-center justify-between p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                            <div>
+                                <label for="ENABLE_AUTO_RESTART_ON_CRASH" class="font-medium text-gray-200">Auto Restart
+                                    on Crash</label>
+                                <p class="text-sm text-gray-400 mt-1">Automatically restart the server if it crashes</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="ENABLE_AUTO_RESTART_ON_CRASH"
+                                    id="ENABLE_AUTO_RESTART_ON_CRASH" class="sr-only peer setting-input" {% if
+                                    settings.get('ENABLE_AUTO_RESTART_ON_CRASH',
+                                    default_settings['ENABLE_AUTO_RESTART_ON_CRASH']) %}checked{% endif %}
+                                    data-original="{{ 'true' if settings.get('ENABLE_AUTO_RESTART_ON_CRASH', default_settings['ENABLE_AUTO_RESTART_ON_CRASH']) else 'false' }}">
+                                <div
+                                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Security Settings -->
+                <section class="mt-8">
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        Security
+                    </h2>
+                    <div class="p-6 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <label class="font-medium text-gray-200">Session Security</label>
+                                <p class="text-sm text-gray-400 mt-1">Regenerate the secret key used for session
+                                    signing. This will log out all users.</p>
+                            </div>
+                            <button type="button"
+                                onclick="document.getElementById('regen-key-modal').classList.remove('hidden')"
+                                class="px-4 py-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/50 transition-colors">
+                                Regenerate Key
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Java Settings -->
+                <section>
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                        </svg>
+                        Java Configuration
+                    </h2>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="JAVA_RAM" class="block text-sm font-medium text-gray-300 mb-2">Server
+                                RAM</label>
+                            <div class="custom-select relative">
+                                <select name="JAVA_RAM" id="JAVA_RAM"
+                                    class="w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 appearance-none setting-input"
+                                    data-original="{{ settings.get('JAVA_RAM', default_settings['JAVA_RAM']) or '2G' }}">
+                                    <option value="2G">2GB</option>
+                                    <option value="4G">4GB</option>
+                                    <option value="6G">6GB</option>
+                                    <option value="8G">8GB</option>
+                                    <option value="10G">10GB</option>
+                                    <option value="12G">12GB</option>
+                                    <option value="16G">16GB</option>
+                                    <option value="custom">Custom...</option>
+                                </select>
+                                <div
+                                    class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <input type="text" id="JAVA_RAM_CUSTOM" placeholder="e.g. 1G, 2500M"
+                                class="hidden mt-2 w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500">
+                        </div>
+
+                        <div>
+                            <label for="SERVER_JAR_NAME" class="block text-sm font-medium text-gray-300 mb-2">Server JAR
+                                File</label>
+                            <input type="text" name="SERVER_JAR_NAME" id="SERVER_JAR_NAME"
+                                value="{{ settings.get('SERVER_JAR_NAME', default_settings['SERVER_JAR_NAME']) }}"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 setting-input"
+                                data-original="{{ settings.get('SERVER_JAR_NAME', default_settings['SERVER_JAR_NAME']) }}">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label for="JAVA_CUSTOM_ARGS"
+                                class="block text-sm font-medium text-gray-300 mb-2">Additional Java Arguments</label>
+                            <input type="text" name="JAVA_CUSTOM_ARGS" id="JAVA_CUSTOM_ARGS"
+                                value="{{ settings.get('JAVA_CUSTOM_ARGS', default_settings['JAVA_CUSTOM_ARGS']) }}"
+                                placeholder="-XX:+UseG1GC"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 setting-input"
+                                data-original="{{ settings.get('JAVA_CUSTOM_ARGS', default_settings['JAVA_CUSTOM_ARGS']) }}">
+                            <p class="text-xs text-gray-500 mt-1">Extra flags passed to the JVM before -jar</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Backups -->
+                <section>
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                        Auto-Backups
+                    </h2>
+                    <div class="p-6 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <label for="AUTO_BACKUP_ENABLED" class="font-medium text-gray-200">Enable
+                                    Auto-Backups</label>
+                                <p class="text-sm text-gray-400 mt-1">Automatically archive server files</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="AUTO_BACKUP_ENABLED" id="AUTO_BACKUP_ENABLED"
+                                    class="sr-only peer setting-input" {% if settings.get('AUTO_BACKUP_ENABLED',
+                                    default_settings['AUTO_BACKUP_ENABLED']) %}checked{% endif %}
+                                    data-original="{{ 'true' if settings.get('AUTO_BACKUP_ENABLED', default_settings['AUTO_BACKUP_ENABLED']) else 'false' }}">
+                                <div
+                                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
+                                </div>
+                            </label>
+                        </div>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="AUTO_BACKUP_INTERVAL_HOURS"
+                                    class="block text-sm font-medium text-gray-300 mb-2">Backup Interval (Hours)</label>
+                                <div class="custom-select relative">
+                                    <select name="AUTO_BACKUP_INTERVAL_HOURS" id="AUTO_BACKUP_INTERVAL_HOURS"
+                                        class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input appearance-none"
+                                        data-original="{{ settings.get('AUTO_BACKUP_INTERVAL_HOURS', default_settings['AUTO_BACKUP_INTERVAL_HOURS']) }}">
+                                        {% for i in range(1, 25) %}
+                                        <option value="{{ i }}" {% if settings.get('AUTO_BACKUP_INTERVAL_HOURS',
+                                            default_settings['AUTO_BACKUP_INTERVAL_HOURS'])==i %}selected{% endif %}>{{
+                                            i }}
+                                            Hour{{ 's' if i > 1 else '' }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div
+                                        class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-400">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="BACKUP_RETENTION_COUNT"
+                                    class="block text-sm font-medium text-gray-300 mb-2">Retention Count</label>
+                                <input type="number" name="BACKUP_RETENTION_COUNT" id="BACKUP_RETENTION_COUNT"
+                                    value="{{ settings.get('BACKUP_RETENTION_COUNT', default_settings['BACKUP_RETENTION_COUNT']) }}"
+                                    min="1" max="100"
+                                    class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input"
+                                    data-original="{{ settings.get('BACKUP_RETENTION_COUNT', default_settings['BACKUP_RETENTION_COUNT']) }}">
+                            </div>
+                        </div>
+                        <div class="mt-6 pt-6 border-t border-gray-700/50 flex justify-end">
+                            <button type="button" onclick="triggerManualBackup()"
+                                class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors text-sm font-medium flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                                Backup Now
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Advanced Configuration -->
+                <section>
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Advanced Configuration
+                    </h2>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="JAVA_EXECUTABLE" class="block text-sm font-medium text-gray-300 mb-2">Java
+                                Executable Path</label>
+                            <input type="text" name="JAVA_EXECUTABLE" id="JAVA_EXECUTABLE"
+                                value="{{ settings.get('JAVA_EXECUTABLE', default_settings['JAVA_EXECUTABLE']) }}"
+                                placeholder="java"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-800/50 border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 setting-input"
+                                data-original="{{ settings.get('JAVA_EXECUTABLE', default_settings['JAVA_EXECUTABLE']) }}">
+                        </div>
+                        <div>
+                            <label for="RESTART_DELAY_SECONDS"
+                                class="block text-sm font-medium text-gray-300 mb-2">Restart Delay (Seconds)</label>
+                            <input type="number" name="RESTART_DELAY_SECONDS" id="RESTART_DELAY_SECONDS"
+                                value="{{ settings.get('RESTART_DELAY_SECONDS', default_settings['RESTART_DELAY_SECONDS']) }}"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input"
+                                data-original="{{ settings.get('RESTART_DELAY_SECONDS', default_settings['RESTART_DELAY_SECONDS']) }}">
+                        </div>
+                        <div>
+                            <label for="MAX_LOG_LINES" class="block text-sm font-medium text-gray-300 mb-2">Max Log
+                                Lines</label>
+                            <input type="number" name="MAX_LOG_LINES" id="MAX_LOG_LINES"
+                                value="{{ settings.get('MAX_LOG_LINES', default_settings['MAX_LOG_LINES']) }}"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input"
+                                data-original="{{ settings.get('MAX_LOG_LINES', default_settings['MAX_LOG_LINES']) }}">
+                        </div>
+                        <div>
+                            <label for="MAX_UPLOAD_SIZE_MB" class="block text-sm font-medium text-gray-300 mb-2">Max
+                                Upload Size (MB)</label>
+                            <input type="number" name="MAX_UPLOAD_SIZE_MB" id="MAX_UPLOAD_SIZE_MB"
+                                value="{{ settings.get('MAX_UPLOAD_SIZE_MB', default_settings['MAX_UPLOAD_SIZE_MB']) }}"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input"
+                                data-original="{{ settings.get('MAX_UPLOAD_SIZE_MB', default_settings['MAX_UPLOAD_SIZE_MB']) }}">
+                        </div>
+                        <div>
+                            <label for="MAX_VIEW_FILE_SIZE_MB" class="block text-sm font-medium text-gray-300 mb-2">Max
+                                Editor File Size (MB)</label>
+                            <input type="number" name="MAX_VIEW_FILE_SIZE_MB" id="MAX_VIEW_FILE_SIZE_MB"
+                                value="{{ settings.get('MAX_VIEW_FILE_SIZE_MB', default_settings['MAX_VIEW_FILE_SIZE_MB']) }}"
+                                class="w-full px-4 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700 text-gray-100 setting-input"
+                                data-original="{{ settings.get('MAX_VIEW_FILE_SIZE_MB', default_settings['MAX_VIEW_FILE_SIZE_MB']) }}">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Extensions -->
+                <section>
+                    <h2 class="text-emerald-400 font-medium mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        File Extensions
+                    </h2>
+                    <div class="space-y-6">
+                        {% for setting_key, label in [
+                        ('ALLOWED_VIEW_EXTENSIONS', 'Viewable Extensions'),
+                        ('ALLOWED_UPLOAD_EXTENSIONS', 'Uploadable Extensions'),
+                        ('ALLOWED_EDIT_EXTENSIONS', 'Editable Extensions')
+                        ] %}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">{{ label }}</label>
+                            <input type="hidden" name="{{ setting_key }}" id="{{ setting_key }}"
+                                value="{{ settings.get(setting_key, default_settings[setting_key])|join(',') }}"
+                                class="setting-input"
+                                data-original="{{ settings.get(setting_key, default_settings[setting_key])|join(',') }}">
+                            <div class="tag-input-wrapper p-2 rounded-lg bg-gray-800/50 border border-gray-700 flex flex-wrap gap-2 min-h-[42px] focus-within:ring-2 focus-within:ring-emerald-500/50 focus-within:border-emerald-500"
+                                data-target="{{ setting_key }}">
+                                <input type="text"
+                                    class="bg-transparent border-none outline-none text-sm text-gray-100 placeholder-gray-500 min-w-[100px] flex-1 tag-input"
+                                    placeholder="Add extension...">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </form>
+        </div>
+    </main>
+
+    <!-- Floating Save Bar -->
+    <div id="save-bar" class="fixed bottom-0 left-0 right-0 z-50 hidden">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="glass rounded-xl px-6 py-4 flex items-center justify-between save-bar shadow-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                    <span class="text-sm text-gray-300">You have unsaved changes</span>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" id="discard-btn"
+                        class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors text-sm font-medium">Discard</button>
+                    <button type="button" id="save-btn"
+                        class="px-6 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold transition-all text-sm flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
+    <!-- OTP Modal -->
+    <div id="otp-modal"
+        class="fixed inset-0 z-[60] {{ 'flex' if otp_modal else 'hidden' }} items-center justify-center bg-gray-950/80 backdrop-blur-sm">
+        <div
+            class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">Security Verification</h3>
+                <p class="text-gray-400 text-sm">To enable registration, please enter the verification code sent to the
+                    server console.</p>
+            </div>
+
+            <div class="space-y-4">
+                <input type="text" id="otp-input" placeholder="ENTER CODE"
+                    class="w-full text-center tracking-[0.5em] font-mono text-xl uppercase px-4 py-3 rounded-xl bg-gray-800 border-2 border-gray-700 text-white focus:outline-none focus:border-amber-500 focus:ring-0 placeholder-gray-600 transition-colors">
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button type="button" onclick="window.location.reload()"
+                        class="px-4 py-2.5 rounded-xl bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors font-medium">Cancel</button>
+                    <button type="button" id="confirm-otp-btn"
+                        class="px-4 py-2.5 rounded-xl bg-amber-600 text-white hover:bg-amber-500 transition-colors font-medium shadow-lg shadow-amber-900/20">Verify</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Backup Modal -->
+    <div id="backup-modal"
+        class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-gray-950/80 backdrop-blur-sm">
+        <div
+            class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">Create Backup?</h3>
+                <p class="text-gray-400 text-sm">This will archive all server files. The server may lag briefly during
+                    this process.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button type="button" onclick="document.getElementById('backup-modal').classList.add('hidden')"
+                    class="px-4 py-2.5 rounded-xl bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors font-medium">Cancel</button>
+                <button type="button" id="confirm-backup-btn"
+                    class="px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 transition-colors font-medium shadow-lg shadow-emerald-900/20">Start
+                    Backup</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('settings-form');
+        const saveBar = document.getElementById('save-bar');
+        const inputs = document.querySelectorAll('.setting-input');
+
+        // RAM logic
+        const ramSelect = document.getElementById('JAVA_RAM');
+        const ramCustom = document.getElementById('JAVA_RAM_CUSTOM');
+
+        function initRam() {
+            const currentRam = "{{ settings.get('JAVA_RAM', default_settings['JAVA_RAM']) }}";
+            const options = Array.from(ramSelect.options).map(o => o.value);
+
+            if (options.includes(currentRam)) {
+                ramSelect.value = currentRam;
+                ramCustom.classList.add('hidden');
+            } else {
+                ramSelect.value = 'custom';
+                ramCustom.value = currentRam;
+                ramCustom.classList.remove('hidden');
+            }
+        }
+        initRam();
+
+        ramSelect.addEventListener('change', () => {
+            if (ramSelect.value === 'custom') {
+                ramCustom.classList.remove('hidden');
+                ramCustom.focus();
+            } else {
+                ramCustom.classList.add('hidden');
+                // Allow detection of change
+                ramSelect.name = 'JAVA_RAM';
+            }
+            checkChanges();
+        });
+
+        ramCustom.addEventListener('input', () => {
+            // For custom, we handle the name attribute on submit to avoid confusion
+            checkChanges();
+        });
+
+        // Tag inputs
+        document.querySelectorAll('.tag-input-wrapper').forEach(wrapper => {
+            const targetId = wrapper.dataset.target;
+            const hiddenInput = document.getElementById(targetId);
+            const input = wrapper.querySelector('input');
+
+            let tags = hiddenInput.value.split(',').filter(t => t.trim());
+
+            function renderTags() {
+                // Remove existing tags in DOM
+                wrapper.querySelectorAll('.tag').forEach(t => t.remove());
+
+                // Add tags before input
+                tags.forEach(tag => {
+                    const el = document.createElement('span');
+                    el.className = 'tag';
+                    el.innerHTML = `${tag} <span class="tag-remove" data-tag="${tag}">&times;</span>`;
+                    wrapper.insertBefore(el, input);
+
+                    el.querySelector('.tag-remove').addEventListener('click', () => {
+                        tags = tags.filter(t => t !== tag);
+                        update();
+                    });
+                });
+            }
+
+            function update() {
+                hiddenInput.value = tags.join(',');
+                renderTags();
+                checkChanges();
+            }
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    const val = input.value.trim().replace('.', ''); // simple sanitization
+                    if (val && !tags.includes(val)) {
+                        tags.push(val);
+                        update();
+                    }
+                    input.value = '';
+                }
+                if (e.key === 'Backspace' && !input.value && tags.length > 0) {
+                    tags.pop();
+                    update();
+                }
+            });
+
+            renderTags();
+        });
+
+        // Change detection
+        function checkChanges() {
+            let changed = false;
+            inputs.forEach(input => {
+                const original = input.dataset.original;
+                let current;
+
+                if (input.type === 'checkbox') {
+                    current = input.checked ? 'true' : 'false';
+                } else if (input.id === 'JAVA_RAM') {
+                    // RAM Special Handling
+                    if (ramSelect.value === 'custom') {
+                        current = ramCustom.value;
+                    } else {
+                        current = ramSelect.value;
+                    }
+                } else {
+                    current = input.value;
+                }
+
+                if (original !== current) {
+                    changed = true;
+                    // Visual feedback could go here
+                }
+            });
+
+            saveBar.classList.toggle('hidden', !changed);
+        }
+
+        inputs.forEach(input => input.addEventListener('input', checkChanges));
+        inputs.forEach(input => input.addEventListener('change', checkChanges));
+
+        document.getElementById('save-btn').addEventListener('click', () => {
+            // Fix RAM value if custom
+            if (ramSelect.value === 'custom') {
+                ramSelect.removeAttribute('name');
+                ramCustom.setAttribute('name', 'JAVA_RAM');
+            }
+            form.submit();
+        });
+
+        document.getElementById('discard-btn').addEventListener('click', () => location.reload());
+
+        function triggerManualBackup() {
+            document.getElementById('backup-modal').classList.remove('hidden');
+        }
+
+        document.getElementById('confirm-backup-btn').addEventListener('click', () => {
+            const modal = document.getElementById('backup-modal');
+            const btn = document.getElementById('confirm-backup-btn');
+
+            btn.disabled = true;
+            btn.textContent = 'Backing up...';
+            btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+            fetch("{{ url_for('backup_now') }}", { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    modal.classList.add('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Start Backup';
+                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
+
+                    if (data.success) showToast(data.message || 'Backup started successfully', 'success');
+                    else showToast(data.message || 'Backup failed', 'error');
+                })
+                .catch(e => {
+                    modal.classList.add('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Start Backup';
+                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                    showToast('Network error: ' + e, 'error');
+                });
+        });
+
+        // OTP Handling
+        const otpModal = document.getElementById('otp-modal');
+        const otpInput = document.getElementById('otp-input');
+        const confirmOtpBtn = document.getElementById('confirm-otp-btn');
+        const mainOtpInput = document.getElementById('main-otp-input');
+
+        if (!otpModal.classList.contains('hidden')) {
+            otpInput.focus();
+        }
+
+        confirmOtpBtn.addEventListener('click', () => {
+            const code = otpInput.value.trim();
+            if (!code) return;
+            mainOtpInput.value = code;
+
+            // Fix RAM value logic again since we are submitting
+            if (ramSelect.value === 'custom') {
+                ramSelect.removeAttribute('name');
+                ramCustom.setAttribute('name', 'JAVA_RAM');
+            }
+
+            form.submit();
+        });
+
+        otpInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') confirmOtpBtn.click();
+        });
+
+        // Toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+        }
+        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+
+        // Color picker sync
+        const colorPicker = document.getElementById('BRAND_COLOR');
+        const colorHex = document.getElementById('BRAND_COLOR_HEX');
+
+        colorPicker.addEventListener('input', () => {
+            colorHex.value = colorPicker.value;
+            checkChanges();
+        });
+
+        colorHex.addEventListener('input', () => {
+            if (/^#[0-9A-Fa-f]{6}$/.test(colorHex.value)) {
+                colorPicker.value = colorHex.value;
+                checkChanges();
+            }
+        });
+
+        // Icon download
+        document.getElementById('download-icon-btn').addEventListener('click', async () => {
+            const urlInput = document.getElementById('BRAND_ICON_URL');
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                showToast('Please enter an icon URL', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('download-icon-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Downloading...';
+
+            try {
+                const response = await fetch('/api/download_icon', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showToast(data.message, 'error');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, 'error');
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download Icon';
+        });
+    </script>
+    <!-- Regenerate Key Modal -->
+    <div id="regen-key-modal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog"
+        aria-modal="true">
+        <div class="fixed inset-0 bg-gray-900/80 backdrop-blur-sm transition-opacity"
+            onclick="document.getElementById('regen-key-modal').classList.add('hidden')"></div>
+        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div
+                    class="relative transform overflow-hidden rounded-xl bg-gray-800 border border-gray-700 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                    <div class="bg-gray-800 px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                        <div class="sm:flex sm:items-start">
+                            <div
+                                class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                                <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                    stroke="currentColor" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                            </div>
+                            <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                                <h3 class="text-base font-semibold leading-6 text-gray-100" id="modal-title">Regenerate
+                                    Secret Key?</h3>
+                                <div class="mt-2">
+                                    <p class="text-sm text-gray-400">Are you sure you want to regenerate the application
+                                        secret key? <br><br> <span class="text-red-400 font-semibold">ALL logged-in
+                                            users (including you) will be immediately logged out.</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        class="bg-gray-800/50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 border-t border-gray-700/50">
+                        <button type="button" onclick="regenerateSecretKey()"
+                            class="inline-flex w-full justify-center rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto">Confirm
+                            & Logout</button>
+                        <button type="button"
+                            onclick="document.getElementById('regen-key-modal').classList.add('hidden')"
+                            class="mt-3 inline-flex w-full justify-center rounded-lg bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-300 shadow-sm hover:bg-gray-600 sm:mt-0 sm:w-auto">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function regenerateSecretKey() {
+            const btn = document.querySelector('#regen-key-modal button.bg-red-600');
+            const originalText = btn.textContent;
+            btn.textContent = 'Regenerating...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/regenerate_secret_key', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.reload(); // Should redirect to login
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred');
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
 </body>
+
 </html>

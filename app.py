@@ -8,14 +8,19 @@ import shutil
 import json
 import sys
 import sqlite3
+import tarfile
+import random
+import string
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    jsonify, flash, abort, Response, send_from_directory, session, g # Added g
+    jsonify, flash, abort, Response, send_from_directory, session, g
 )
+from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash, check_password_hash # Added for passwords
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- Configuration ---
 try:
@@ -28,7 +33,8 @@ except FileNotFoundError:
     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     exit(1)
 
-SETTINGS_FILE = MINECRAFT_SERVER_PATH / 'manager_settings.json'
+SETTINGS_FILE = Path(__file__).parent / 'manager_settings.json'  # Stored outside server dir for security
+SECRET_KEY_FILE = Path(__file__).parent / 'secret_key'
 
 DEFAULT_SETTINGS = {
     "AUTOSTART_SERVER": False,
@@ -36,19 +42,27 @@ DEFAULT_SETTINGS = {
     "ALLOW_REGISTRATION": True,
     "SERVER_JAR_NAME": "server.jar",
     "JAVA_EXECUTABLE": "java",
-    "JAVA_ARGS": ["-Xmx2G", "-Xms1G"],
-    "LOG_FILE_DISPLAY": str(MINECRAFT_SERVER_PATH / "logs" / "latest.log"), # For display only
-    "DATABASE_DISPLAY": str(MINECRAFT_SERVER_PATH / 'users.db'), # For display only
+    "JAVA_RAM": "2G",
+    "JAVA_CUSTOM_ARGS": "",
+    "LOG_FILE_DISPLAY": str(MINECRAFT_SERVER_PATH / "logs" / "latest.log"),
+    "DATABASE_DISPLAY": str(MINECRAFT_SERVER_PATH / 'users.db'),
     "MAX_LOG_LINES": 50,
     "ALLOWED_VIEW_EXTENSIONS": ['.txt', '.log', '.yml', '.yaml', '.json', '.properties', '.md'],
     "MAX_VIEW_FILE_SIZE_MB": 5,
     "ALLOWED_UPLOAD_EXTENSIONS": ['jar', 'zip', 'dat', 'json', 'yml', 'yaml', 'txt', 'conf', 'properties', 'schem', 'schematic', 'mcstructure', 'mcfunction', 'mcmeta', 'png', 'jpg', 'jpeg', 'gif'],
     "MAX_UPLOAD_SIZE_MB": 4096,
     "ALLOWED_EDIT_EXTENSIONS": ['.txt', '.yml', '.yaml', '.json', '.properties', '.conf', '.cfg'],
-    "RESTART_DELAY_SECONDS": 5
+    "RESTART_DELAY_SECONDS": 5,
+    "AUTO_BACKUP_ENABLED": False,
+    "AUTO_BACKUP_INTERVAL_HOURS": 6,
+    "BACKUP_RETENTION_COUNT": 10,
+    # Branding settings
+    "BRAND_NAME": "Nebula",
+    "BRAND_COLOR": "#8b5cf6",  # violet-500
+    "BRAND_ICON_URL": ""
 }
 
-DATABASE = MINECRAFT_SERVER_PATH / 'users.db' # Added database path
+DATABASE = Path(__file__).parent / 'users.db'  # Stored outside server dir for security
 MONITOR_INTERVAL_SECONDS = 5
 manager_settings = {}
 
@@ -90,8 +104,34 @@ def save_settings(settings_to_save):
         return False
 
 # --- Flask App Setup ---
+def load_secret_key():
+    """Loads secret key from file or generates/saves a new one."""
+    if SECRET_KEY_FILE.exists():
+        try:
+            with open(SECRET_KEY_FILE, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading secret key: {e}")
+    
+    # Generate new if missing or error
+    new_key = os.urandom(24)
+    try:
+        with open(SECRET_KEY_FILE, 'wb') as f:
+            f.write(new_key)
+        print(f"Generated new secret key at {SECRET_KEY_FILE}")
+    except Exception as e:
+        print(f"Error saving secret key: {e}")
+    return new_key
+
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = load_secret_key()
+
+# --- Socket.IO Setup ---
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Track last log position for real-time streaming
+last_log_position = 0
+last_log_content = ""
 
 # --- Load Manager Settings AFTER app initialization ---
 with app.app_context():
@@ -110,15 +150,20 @@ AUTOSTART_SERVER = manager_settings.get('AUTOSTART_SERVER', DEFAULT_SETTINGS['AU
 ENABLE_AUTO_RESTART_ON_CRASH = manager_settings.get('ENABLE_AUTO_RESTART_ON_CRASH', DEFAULT_SETTINGS['ENABLE_AUTO_RESTART_ON_CRASH'])
 SERVER_JAR_NAME = manager_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
 JAVA_EXECUTABLE = manager_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
-JAVA_ARGS = manager_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
+JAVA_RAM = manager_settings.get('JAVA_RAM', DEFAULT_SETTINGS['JAVA_RAM'])
+JAVA_CUSTOM_ARGS = manager_settings.get('JAVA_CUSTOM_ARGS', DEFAULT_SETTINGS['JAVA_CUSTOM_ARGS'])
 MAX_LOG_LINES = manager_settings.get('MAX_LOG_LINES', DEFAULT_SETTINGS['MAX_LOG_LINES'])
 ALLOWED_VIEW_EXTENSIONS = set(manager_settings.get('ALLOWED_VIEW_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_VIEW_EXTENSIONS']))
 MAX_VIEW_FILE_SIZE_MB = manager_settings.get('MAX_VIEW_FILE_SIZE_MB', DEFAULT_SETTINGS['MAX_VIEW_FILE_SIZE_MB'])
 ALLOWED_UPLOAD_EXTENSIONS = set(manager_settings.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_UPLOAD_EXTENSIONS']))
 ALLOWED_EDIT_EXTENSIONS = set(manager_settings.get('ALLOWED_EDIT_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_EDIT_EXTENSIONS']))
 RESTART_DELAY_SECONDS = manager_settings.get('RESTART_DELAY_SECONDS', DEFAULT_SETTINGS['RESTART_DELAY_SECONDS'])
+AUTO_BACKUP_ENABLED = manager_settings.get('AUTO_BACKUP_ENABLED', DEFAULT_SETTINGS['AUTO_BACKUP_ENABLED'])
+AUTO_BACKUP_INTERVAL_HOURS = manager_settings.get('AUTO_BACKUP_INTERVAL_HOURS', DEFAULT_SETTINGS['AUTO_BACKUP_INTERVAL_HOURS'])
+BACKUP_RETENTION_COUNT = manager_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT'])
 LOG_FILE = MINECRAFT_SERVER_PATH / "logs" / "latest.log"
-DATABASE = MINECRAFT_SERVER_PATH / 'users.db'
+DATABASE = Path(__file__).parent / 'users.db'
+BACKUPS_DIR = MINECRAFT_SERVER_PATH / 'Backups'
 
 # --- Database Functions --- Added Section
 def get_db():
@@ -131,7 +176,70 @@ def get_db():
         g.db.row_factory = sqlite3.Row # Return rows as dict-like objects
     return g.db
 
-# --- Function for Server Autostart ---  <<< ADD THIS FUNCTION
+def get_java_args():
+    """Build Java arguments from RAM setting and custom args."""
+    ram = manager_settings.get('JAVA_RAM', DEFAULT_SETTINGS['JAVA_RAM'])
+    custom_args = manager_settings.get('JAVA_CUSTOM_ARGS', '')
+    
+    args = [f"-Xmx{ram}", f"-Xms{ram}"]
+    if custom_args and custom_args.strip():
+        args.extend(custom_args.strip().split())
+    return args
+
+def create_backup():
+    """Create a backup of the Minecraft server directory."""
+    try:
+        # Ensure backup directory exists
+        BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Generate backup filename: backup-MM-DD-YY-N.tar.gz
+        now = datetime.now()
+        date_prefix = now.strftime("%m-%d-%y")
+        
+        # Find next backup number for today
+        existing_backups = list(BACKUPS_DIR.glob(f"backup-{date_prefix}-*.tar.gz"))
+        next_num = len(existing_backups) + 1
+        
+        backup_name = f"backup-{date_prefix}-{next_num}.tar.gz"
+        backup_path = BACKUPS_DIR / backup_name
+        
+        print(f"Creating backup: {backup_path}")
+        
+        # Create tar.gz backup (exclude the Backups directory itself)
+        with tarfile.open(backup_path, "w:gz") as tar:
+            for item in MINECRAFT_SERVER_PATH.iterdir():
+                if item.name != 'Backups' and not item.name.startswith('.'):
+                    tar.add(item, arcname=item.name)
+        
+        print(f"Backup created successfully: {backup_name}")
+        
+        # Clean up old backups if retention limit exceeded
+        retention = int(manager_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT']))
+        all_backups = sorted(BACKUPS_DIR.glob("backup-*.tar.gz"), key=lambda p: p.stat().st_mtime)
+        while len(all_backups) > retention:
+            oldest = all_backups.pop(0)
+            oldest.unlink()
+            print(f"Deleted old backup: {oldest.name}")
+        
+        return True, backup_name
+    except Exception as e:
+        print(f"Backup error: {e}")
+        return False, str(e)
+
+def backup_scheduler():
+    """Background thread for scheduled backups."""
+    global AUTO_BACKUP_ENABLED, AUTO_BACKUP_INTERVAL_HOURS
+    while True:
+        if AUTO_BACKUP_ENABLED:
+            interval_seconds = AUTO_BACKUP_INTERVAL_HOURS * 3600
+            time.sleep(interval_seconds)
+            if AUTO_BACKUP_ENABLED:  # Check again after sleep
+                print("Running scheduled backup...")
+                create_backup()
+        else:
+            time.sleep(60)  # Check every minute if backups got enabled
+
+# --- Function for Server Autostart ---
 def try_start_server_on_launch():
     """Attempts to start the Minecraft server if not already running."""
     global server_process
@@ -144,7 +252,7 @@ def try_start_server_on_launch():
         print(f"Autostart Error: Server JAR not found at: {server_jar_path}")
         return
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
+    command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
     try:
         print(f"Autostart: Attempting server launch with command: {' '.join(command)}")
         print(f"Autostart: Working directory: {MINECRAFT_SERVER_PATH}")
@@ -252,8 +360,14 @@ def load_logged_in_user():
 
 @app.context_processor
 def inject_user():
-    """Inject user variable into templates"""
-    return dict(user=g.user)
+    """Inject user and branding variables into templates"""
+    icon_path = Path(__file__).parent / 'static' / 'icon.png'
+    return dict(
+        user=g.user,
+        brand_name=manager_settings.get('BRAND_NAME', DEFAULT_SETTINGS['BRAND_NAME']),
+        brand_color=manager_settings.get('BRAND_COLOR', DEFAULT_SETTINGS['BRAND_COLOR']),
+        has_custom_icon=icon_path.exists()
+    )
 
 # --- Helper Functions ---
 
@@ -446,7 +560,7 @@ def _start_server_process():
         # No flash here as this is internal, caller should handle UI feedback
         return False
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
+    command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
     new_process = None
     try:
         print(f"_start_server_process: Starting server with command: {' '.join(command)}")
@@ -569,21 +683,29 @@ def server_settings():
 
             form_value = request.form.get(key)
 
+            form_value = request.form.get(key)
+
             # Handle checkboxes (booleans) - value is 'on' if checked, None otherwise
+            # Note: This assumes all boolean settings ARE present in the form. 
+            # If a boolean setting is missing from the form, it will be disabled (set to False).
             if isinstance(DEFAULT_SETTINGS[key], bool):
                 updated_settings[key] = (form_value == 'on')
+
             # Handle numbers (int/float)
             elif isinstance(DEFAULT_SETTINGS[key], int):
-                try:
-                    updated_settings[key] = int(form_value)
-                except (ValueError, TypeError):
-                    form_errors.append(f"Invalid integer value for {key}: '{form_value}'")
-                    # Keep old value on error, or set default? Let's keep old.
+                if form_value is not None:
+                    try:
+                        updated_settings[key] = int(form_value)
+                    except (ValueError, TypeError):
+                        form_errors.append(f"Invalid integer value for {key}: '{form_value}'")
+
             elif isinstance(DEFAULT_SETTINGS[key], float):
-                 try:
-                     updated_settings[key] = float(form_value)
-                 except (ValueError, TypeError):
-                     form_errors.append(f"Invalid float value for {key}: '{form_value}'")
+                if form_value is not None:
+                    try:
+                        updated_settings[key] = float(form_value)
+                    except (ValueError, TypeError):
+                        form_errors.append(f"Invalid float value for {key}: '{form_value}'")
+
             # Handle lists/sets (expect comma-separated string from textarea/input)
             elif isinstance(DEFAULT_SETTINGS[key], list) or isinstance(DEFAULT_SETTINGS[key], set):
                  if form_value is not None:
@@ -591,11 +713,45 @@ def server_settings():
                      items = [item.strip() for item in form_value.split(',') if item.strip()]
                      # Keep as list (JSON serializable)
                      updated_settings[key] = items
-                 else:
-                     updated_settings[key] = [] # Empty list if form value is missing
+                 
             # Handle strings (default case)
             else:
-                updated_settings[key] = form_value if form_value is not None else DEFAULT_SETTINGS[key]
+                if form_value is not None:
+                    updated_settings[key] = form_value
+
+        # --- Security Verification for Enabling Registration ---
+        current_allow_reg = manager_settings.get('ALLOW_REGISTRATION', DEFAULT_SETTINGS['ALLOW_REGISTRATION'])
+        new_allow_reg = updated_settings.get('ALLOW_REGISTRATION', False)
+        
+        # If trying to ENABLE registration (False -> True)
+        if new_allow_reg and not current_allow_reg:
+            otp_input = request.form.get('otp_code')
+            session_otp = session.get('registration_otp')
+            
+            if otp_input and session_otp and otp_input == session_otp:
+                # OTP is correct, clear it and proceed
+                session.pop('registration_otp', None)
+            else:
+                # OTP missing or invalid
+                if not session_otp:
+                    # Generate new OTP
+                    session_otp = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                    session['registration_otp'] = session_otp
+                    print(f"\n{'='*40}\n[SECURITY ALERT] Registration Enable Attempt\nVerification Code: {session_otp}\n{'='*40}\n")
+                    flash("Security check required. A verification code has been sent to the server console.", "warning")
+                elif otp_input:
+                    flash("Invalid verification code. Please check the server console.", "error")
+                
+                # Halt save and show OTP modal
+                # Pass back the form data so user doesn't lose other changes
+                icon_path = Path(__file__).parent / 'static' / 'icon.png'
+                return render_template('server_settings.html', 
+                                     settings=updated_settings, 
+                                     default_settings=DEFAULT_SETTINGS,
+                                     otp_modal=True,
+                                     icon_exists=icon_path.exists(),
+                                     icon_mtime=int(icon_path.stat().st_mtime) if icon_path.exists() else 0)
+        # -------------------------------------------------------
 
         if form_errors:
             for error in form_errors:
@@ -618,20 +774,25 @@ def server_settings():
 
                 # Update global Python variables (again, restart needed for some)
                 global AUTOSTART_SERVER, ENABLE_AUTO_RESTART_ON_CRASH, SERVER_JAR_NAME, JAVA_EXECUTABLE
-                global JAVA_ARGS, MAX_LOG_LINES, ALLOWED_VIEW_EXTENSIONS, MAX_VIEW_FILE_SIZE_MB
+                global JAVA_RAM, JAVA_CUSTOM_ARGS, MAX_LOG_LINES, ALLOWED_VIEW_EXTENSIONS, MAX_VIEW_FILE_SIZE_MB
                 global ALLOWED_UPLOAD_EXTENSIONS, ALLOWED_EDIT_EXTENSIONS, RESTART_DELAY_SECONDS
+                global AUTO_BACKUP_ENABLED, AUTO_BACKUP_INTERVAL_HOURS, BACKUP_RETENTION_COUNT
 
                 AUTOSTART_SERVER = updated_settings.get('AUTOSTART_SERVER', DEFAULT_SETTINGS['AUTOSTART_SERVER'])
                 ENABLE_AUTO_RESTART_ON_CRASH = updated_settings.get('ENABLE_AUTO_RESTART_ON_CRASH', DEFAULT_SETTINGS['ENABLE_AUTO_RESTART_ON_CRASH'])
                 SERVER_JAR_NAME = updated_settings.get('SERVER_JAR_NAME', DEFAULT_SETTINGS['SERVER_JAR_NAME'])
                 JAVA_EXECUTABLE = updated_settings.get('JAVA_EXECUTABLE', DEFAULT_SETTINGS['JAVA_EXECUTABLE'])
-                JAVA_ARGS = updated_settings.get('JAVA_ARGS', DEFAULT_SETTINGS['JAVA_ARGS'])
+                JAVA_RAM = updated_settings.get('JAVA_RAM', DEFAULT_SETTINGS['JAVA_RAM'])
+                JAVA_CUSTOM_ARGS = updated_settings.get('JAVA_CUSTOM_ARGS', DEFAULT_SETTINGS['JAVA_CUSTOM_ARGS'])
                 MAX_LOG_LINES = updated_settings.get('MAX_LOG_LINES', DEFAULT_SETTINGS['MAX_LOG_LINES'])
                 ALLOWED_VIEW_EXTENSIONS = set(updated_settings.get('ALLOWED_VIEW_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_VIEW_EXTENSIONS']))
                 MAX_VIEW_FILE_SIZE_MB = updated_settings.get('MAX_VIEW_FILE_SIZE_MB', DEFAULT_SETTINGS['MAX_VIEW_FILE_SIZE_MB'])
                 ALLOWED_UPLOAD_EXTENSIONS = set(updated_settings.get('ALLOWED_UPLOAD_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_UPLOAD_EXTENSIONS']))
                 ALLOWED_EDIT_EXTENSIONS = set(updated_settings.get('ALLOWED_EDIT_EXTENSIONS', DEFAULT_SETTINGS['ALLOWED_EDIT_EXTENSIONS']))
                 RESTART_DELAY_SECONDS = updated_settings.get('RESTART_DELAY_SECONDS', DEFAULT_SETTINGS['RESTART_DELAY_SECONDS'])
+                AUTO_BACKUP_ENABLED = updated_settings.get('AUTO_BACKUP_ENABLED', DEFAULT_SETTINGS['AUTO_BACKUP_ENABLED'])
+                AUTO_BACKUP_INTERVAL_HOURS = updated_settings.get('AUTO_BACKUP_INTERVAL_HOURS', DEFAULT_SETTINGS['AUTO_BACKUP_INTERVAL_HOURS'])
+                BACKUP_RETENTION_COUNT = updated_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT'])
 
                 # Update the global manager_settings dict itself
                 manager_settings = updated_settings
@@ -645,9 +806,12 @@ def server_settings():
     # GET request or POST failed save: Render the template
     # Pass the *current* state of manager_settings
     # Also pass DEFAULT_SETTINGS to help the template understand data types
+    icon_path = Path(__file__).parent / 'static' / 'icon.png'
     return render_template('server_settings.html',
                            settings=manager_settings,
-                           default_settings=DEFAULT_SETTINGS)
+                           default_settings=DEFAULT_SETTINGS,
+                           icon_exists=icon_path.exists(),
+                           icon_mtime=int(icon_path.stat().st_mtime) if icon_path.exists() else 0)
 
 @app.route('/server_properties', methods=['GET', 'POST'])
 @login_required
@@ -724,7 +888,7 @@ def start_server():
          flash(f"Server JAR not found at: {server_jar_path}", "error")
          return redirect(url_for('index'))
 
-    command = [JAVA_EXECUTABLE] + JAVA_ARGS + ["-jar", str(server_jar_path), "nogui"]
+    command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
     try:
         print(f"Starting server with command: {' '.join(command)}")
         print(f"Working directory: {MINECRAFT_SERVER_PATH}")
@@ -1104,13 +1268,17 @@ def view_file(filepath):
         mimetype = mimetypes.guess_type(full_path)[0] or 'text/plain'
         # Use the same template for viewing and editing, control via 'can_edit' flag
         template_name = 'file_viewer.html'
+        
+        # Check for popup mode (fullscreen editor in new window)
+        popup_mode = request.args.get('popup', '0') == '1'
 
         return render_template(template_name,
                                filename=full_path.name,
                                filepath=filepath, # Pass relative path
                                content=content,
                                mimetype=mimetype,
-                               can_edit=can_edit # Pass edit flag to template
+                               can_edit=can_edit, # Pass edit flag to template
+                               popup_mode=popup_mode # Pass popup mode flag
                                )
 
     except PermissionError: flash(f"Permission denied to read file: {filepath}", "error")
@@ -1448,6 +1616,70 @@ def clipboard_paste():
 
     return redirect(redirect_target)
 
+
+@app.route('/api/move', methods=['POST'])
+@login_required
+def api_move_item():
+    """API endpoint to move a file or directory. Returns JSON."""
+    data = request.get_json()
+    if not data:
+        return jsonify(success=False, message="No JSON data provided"), 400
+    
+    source_rel_path = data.get('source_path')
+    target_rel_dir = data.get('target_dir', '')
+    
+    if not source_rel_path:
+        return jsonify(success=False, message="No source path specified"), 400
+    
+    # Validate source
+    source_full_path = get_full_path(source_rel_path)
+    if source_full_path is None or not source_full_path.exists():
+        return jsonify(success=False, message=f"Source not found: {source_rel_path}"), 404
+    
+    if source_full_path == MINECRAFT_SERVER_PATH:
+        return jsonify(success=False, message="Cannot move the root server directory"), 403
+    
+    # Validate target directory
+    target_full_dir = get_full_path(target_rel_dir) if target_rel_dir else MINECRAFT_SERVER_PATH
+    if target_full_dir is None or not target_full_dir.is_dir():
+        return jsonify(success=False, message=f"Invalid target directory: {target_rel_dir}"), 400
+    
+    destination_path = target_full_dir / source_full_path.name
+    
+    # Prevent moving onto self
+    if source_full_path == destination_path:
+        return jsonify(success=False, message="Source and destination are the same"), 400
+    
+    # Prevent moving directory into itself
+    try:
+        if source_full_path.is_dir() and destination_path.resolve().is_relative_to(source_full_path.resolve()):
+            return jsonify(success=False, message="Cannot move a directory inside itself"), 400
+    except AttributeError:
+        if str(destination_path.resolve()).startswith(str(source_full_path.resolve()) + os.sep):
+            return jsonify(success=False, message="Cannot move a directory inside itself"), 400
+    
+    # Check if destination already exists
+    if destination_path.exists():
+        return jsonify(success=False, message=f"'{destination_path.name}' already exists in destination"), 409
+    
+    # Final safety check
+    if not is_safe_path(destination_path):
+        return jsonify(success=False, message="Move would create an unsafe path"), 403
+    
+    try:
+        shutil.move(str(source_full_path), str(destination_path))
+        return jsonify(
+            success=True, 
+            message=f"Moved '{source_full_path.name}' to '{target_rel_dir or 'Server Root'}'"
+        )
+    except PermissionError as e:
+        return jsonify(success=False, message=f"Permission denied: {e}"), 403
+    except (shutil.Error, OSError) as e:
+        return jsonify(success=False, message=f"Move failed: {e}"), 500
+    except Exception as e:
+        print(f"API Move error: {e}")
+        return jsonify(success=False, message=f"Unexpected error: {e}"), 500
+
 @app.route('/save_file', methods=['POST'])
 @login_required
 def save_file():
@@ -1496,6 +1728,109 @@ def save_file():
     return redirect(redirect_target)
 
 
+@app.route('/api/save_file', methods=['POST'])
+@login_required
+def api_save_file():
+    """API endpoint for AJAX file saving. Returns JSON instead of redirect."""
+    data = request.get_json()
+    if not data:
+        return jsonify(success=False, message="No JSON data provided"), 400
+    
+    relative_path = data.get('filepath')
+    new_content = data.get('content')
+    
+    if relative_path is None or new_content is None:
+        return jsonify(success=False, message="Missing file path or content"), 400
+    
+    full_path = get_full_path(relative_path)
+    
+    if full_path is None:
+        return jsonify(success=False, message=f"Invalid or unsafe path: {relative_path}"), 403
+    
+    try:
+        if not full_path.is_file():
+            return jsonify(success=False, message=f"Target path is not a file: {relative_path}"), 404
+        
+        if full_path.suffix.lower() not in ALLOWED_EDIT_EXTENSIONS:
+            return jsonify(success=False, message=f"Editing '{full_path.suffix}' files not allowed"), 403
+        
+        # Normalize line endings
+        normalized_content = new_content.replace('\r\n', '\n')
+        full_path.write_text(normalized_content, encoding='utf-8', errors='replace')
+        
+        return jsonify(success=True, message=f"File '{full_path.name}' saved successfully")
+    except PermissionError:
+        return jsonify(success=False, message=f"Permission denied: {full_path.name}"), 403
+    except OSError as e:
+        return jsonify(success=False, message=f"Could not write file: {e}"), 500
+    except Exception as e:
+        print(f"API Save error: {e}")
+        return jsonify(success=False, message=f"Unexpected error: {e}"), 500
+
+
+@app.route('/api/download_icon', methods=['POST'])
+@login_required
+def api_download_icon():
+    """Download an icon from URL and save as static/icon.png."""
+    import urllib.request
+    import urllib.error
+    
+    data = request.get_json()
+    if not data:
+        return jsonify(success=False, message="No JSON data provided"), 400
+    
+    url = data.get('url', '').strip()
+    if not url:
+        return jsonify(success=False, message="No URL provided"), 400
+    
+    # Validate URL format
+    if not url.startswith(('http://', 'https://')):
+        return jsonify(success=False, message="Invalid URL - must start with http:// or https://"), 400
+    
+    try:
+        # Download the image
+        icon_path = Path(__file__).parent / 'static' / 'icon.png'
+        
+        # Create static folder if it doesn't exist
+        icon_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Download with timeout
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content_type = response.headers.get('Content-Type', '')
+            if 'image' not in content_type.lower():
+                return jsonify(success=False, message=f"URL does not point to an image (got {content_type})"), 400
+            
+            image_data = response.read()
+            
+            # Save the icon
+            with open(icon_path, 'wb') as f:
+                f.write(image_data)
+        
+        return jsonify(success=True, message=f"Icon downloaded and saved ({len(image_data)} bytes)")
+    
+    except urllib.error.URLError as e:
+        return jsonify(success=False, message=f"Failed to download: {e.reason}"), 400
+    except urllib.error.HTTPError as e:
+        return jsonify(success=False, message=f"HTTP error {e.code}: {e.reason}"), 400
+    except Exception as e:
+        return jsonify(success=False, message=f"Error: {str(e)}"), 500
+
+
+
+@app.route('/api/regenerate_secret_key', methods=['POST'])
+@login_required
+def regenerate_secret_key():
+    """Regenerates the Flask secret key and saves it."""
+    new_key = os.urandom(24)
+    try:
+        with open(SECRET_KEY_FILE, 'wb') as f:
+            f.write(new_key)
+        app.secret_key = new_key
+        return jsonify({'status': 'success', 'message': 'Secret key regenerated. Since session validation depends on the key, you will be logged out.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f"Failed to save secret key: {e}"}), 500
+
 # --- API Routes --- (Apply @login_required)
 
 @app.route('/status_api')
@@ -1503,6 +1838,16 @@ def save_file():
 def status_api():
     """API endpoint to get server status."""
     return jsonify(status="Running" if is_server_running() else "Stopped")
+
+@app.route('/backup_now', methods=['POST'])
+@login_required
+def backup_now():
+    """Manually trigger a backup."""
+    success, result = create_backup()
+    if success:
+        return jsonify(success=True, message=f"Backup created: {result}")
+    else:
+        return jsonify(success=False, message=f"Backup failed: {result}")
 
 @app.route('/logs_api')
 @login_required
@@ -1583,4 +1928,37 @@ if __name__ == '__main__':
     print("Monitoring thread active.")
     # ---------------------------------------------
 
-    app.run(debug=False, host='0.0.0.0', port=8080) # Keep debug=True for development
+    # --- Socket.IO Log Streaming Background Task ---
+    def log_stream_task():
+        """Background task for streaming log updates via Socket.IO."""
+        global last_log_position, last_log_content
+        while True:
+            try:
+                if LOG_FILE.is_file():
+                    current_size = LOG_FILE.stat().st_size
+                    if current_size < last_log_position:
+                        # Log file was rotated/truncated, reset
+                        last_log_position = 0
+                    
+                    if current_size > last_log_position:
+                        with open(LOG_FILE, 'r', encoding='utf-8', errors='ignore') as f:
+                            f.seek(last_log_position)
+                            new_content = f.read()
+                            last_log_position = f.tell()
+                            if new_content.strip():
+                                socketio.emit('log_update', {'data': new_content})
+            except Exception as e:
+                print(f"Log stream error: {e}")
+            socketio.sleep(0.5)  # Check every 500ms
+    
+    socketio.start_background_task(log_stream_task)
+    print("Log streaming task started.")
+    # -----------------------------------------------
+
+    # --- Start Backup Scheduler Thread ---
+    backup_thread = threading.Thread(target=backup_scheduler, daemon=True)
+    backup_thread.start()
+    print("Backup scheduler thread started.")
+    # -------------------------------------
+
+    socketio.run(app, debug=False, host='0.0.0.0', port=8080)

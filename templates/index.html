@@ -1,187 +1,429 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Server Manager</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    </head>
-<body>
-    <div class="auth-status"> {% if g.user %}
-            <span>Logged in as <strong>{{ g.user.username }}</strong></span> |
-            <a href="{{ url_for('logout') }}">Logout</a>
-        {% else %}
-            <a href="{{ url_for('login') }}">Login</a> |
-            <a href="{{ url_for('register') }}">Register</a>
-        {% endif %}
-    </div>
-    <div class="theme-toggle"> <label class="switch"> <div id="server-status" class="{{ 'status-running' if status == 'Running' else 'status-stopped' }}">{{ status }}</div>
-          <input type="checkbox" id="darkModeToggle">
-          <span class="slider round"></span>
-        </label>
-        <span class="theme-toggle-label">Dark Mode</span>
-    </div>
+    <title>{{ brand_name }} Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
 
-    {# Container where toasts will be dynamically added by JavaScript #}
-    <div id="toast-container"></div>
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
 
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
 
-    <div id="toast-messages" style="display: none;">
-      {% with messages = get_flashed_messages(with_categories=true) %}
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Glass effect */
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+
+        /* Glow effects */
+        .glow-green {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .glow-red {
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+
+        /* Status pulse animation */
+        @keyframes pulse-green {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+            }
+        }
+
+        @keyframes pulse-red {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+            }
+        }
+
+        .status-running {
+            animation: pulse-green 2s infinite;
+        }
+
+        .status-stopped {
+            animation: pulse-red 2s infinite;
+        }
+
+        /* Toast animations */
+        .toast-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast-exit {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100">
+    <!-- Toast container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+
+    <!-- Hidden flash messages for JS -->
+    <div id="toast-messages" class="hidden">
+        {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          {% for category, message in messages %}
-            <div data-category="{{ category }}" data-message="{{ message }}"></div>
-          {% endfor %}
+        {% for category, message in messages %}
+        <div data-category="{{ category }}" data-message="{{ message }}"></div>
+        {% endfor %}
         {% endif %}
-      {% endwith %}
+        {% endwith %}
     </div>
 
-    <div class="status-section"> <h1>Minecraft Server Management Panel</h1> <div> <div class="nav-links"> <a href="{{ url_for('files') }}">File Manager</a> <a href="{{ url_for('server_properties') }}">Server Properties</a><a href="{{ url_for('server_settings') }}">Panel Settings</a>
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    {% if has_custom_icon %}
+                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                        class="w-10 h-10 rounded-xl shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                </a>
+            </div>
+            <nav class="flex items-center gap-1">
+                <!-- Navigation Links -->
+                <a href="{{ url_for('index') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                <a href="{{ url_for('files') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                <a href="{{ url_for('server_properties') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                <a href="{{ url_for('server_settings') }}"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                {% if g.user %}
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                </div>
+                <a href="{{ url_for('logout') }}"
+                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                    title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
         </div>
-        <div class="controls">
-            <form action="{{ url_for('start_server') }}" method="post" style="display: inline;">
-                <button type="submit" id="start-button" {% if status == 'Running' %}disabled{% endif %}>Start Server</button>
-            </form>
-            <form action="{{ url_for('stop_server') }}" method="post" style="display: inline;">
-                <button type="submit" id="stop-button" {% if status == 'Stopped' %}disabled{% endif %} class="stop">Stop Server</button>
-            </form>
-        </div>
-    </div>
+    </header>
 
-        <pre id="server-logs"><code>{% for line in logs %}{{ line }}{% endfor %}</code></pre>
-                <form action="{{ url_for('send_command') }}" method="post">
-            <input type="text" name="command" id="command-input" placeholder="e.g., say Hello world!" required {% if status == 'Stopped' %}disabled{% endif %}>
-          <!--  <button type="submit" id="send-button" {% if status == 'Stopped' %}disabled{% endif %}>Send</button> -->
-        </form>
-    </div>
+    <!-- Main content -->
+    <main class="pt-24 pb-8 px-4 max-w-6xl mx-auto">
+        <!-- Status Card -->
+        <div class="glass rounded-2xl p-6 mb-6">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div id="status-indicator"
+                        class="w-4 h-4 rounded-full {{ 'bg-emerald-500 status-running' if status == 'Running' else 'bg-red-500 status-stopped' }}">
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold">Minecraft Server</h1>
+                        <p id="server-status"
+                            class="text-sm {{ 'text-emerald-400' if status == 'Running' else 'text-red-400' }}">{{
+                            status }}</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <form action="{{ url_for('start_server') }}" method="post">
+                        <button type="submit" id="start-button"
+                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Running' else 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105' }}"
+                            {{ 'disabled' if status=='Running' }}>
+                            <span class="flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Start
+                            </span>
+                        </button>
+                    </form>
+                    <form action="{{ url_for('stop_server') }}" method="post">
+                        <button type="submit" id="stop-button"
+                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Stopped' else 'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105' }}"
+                            {{ 'disabled' if status=='Stopped' }}>
+                            <span class="flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                                </svg>
+                                Stop
+                            </span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Console -->
+        <div class="glass rounded-2xl overflow-hidden">
+            <div class="bg-gray-800/50 px-4 py-3 border-b border-gray-700/50 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+                    </div>
+                    <span class="text-sm text-gray-400 font-medium">Console</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="connection-status" class="text-xs text-gray-500 flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-gray-500" id="ws-indicator"></span>
+                        <span id="ws-text">Connecting...</span>
+                    </span>
+                </div>
+            </div>
+
+            <div id="console-output"
+                class="h-[500px] overflow-y-auto p-4 font-mono text-sm text-gray-300 bg-gray-900/50 whitespace-pre-wrap break-words leading-relaxed">
+                {% for line in logs %}<div class="log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded">{{
+                    line.rstrip() }}</div>{% endfor %}</div>
+
+            <form id="command-form" action="{{ url_for('send_command') }}" method="post"
+                class="border-t border-gray-700/50">
+                <div class="flex items-center gap-2 px-4 py-3 bg-gray-800/30">
+                    <span class="text-emerald-400 font-mono font-bold">&gt;</span>
+                    <input type="text" name="command" id="command-input" placeholder="Enter command..."
+                        class="flex-1 bg-transparent border-none outline-none text-gray-100 font-mono placeholder-gray-600"
+                        autocomplete="off" {{ 'disabled' if status=='Stopped' }}>
+                    <button type="submit" id="send-button"
+                        class="px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm {{ 'opacity-50 cursor-not-allowed' if status == 'Stopped' }}"
+                        {{ 'disabled' if status=='Stopped' }}>
+                        Send
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
 
     <script>
-        // Basic Javascript for status/log refresh (Keep existing script)
+        // Socket.IO connection
+        const socket = io();
+        const consoleOutput = document.getElementById('console-output');
+        const wsIndicator = document.getElementById('ws-indicator');
+        const wsText = document.getElementById('ws-text');
         const statusElement = document.getElementById('server-status');
+        const statusIndicator = document.getElementById('status-indicator');
         const startButton = document.getElementById('start-button');
         const stopButton = document.getElementById('stop-button');
         const commandInput = document.getElementById('command-input');
         const sendButton = document.getElementById('send-button');
-        const logsElement = document.getElementById('server-logs').querySelector('code');
-        const commandForm = document.getElementById('command-form'); // Use ID selector
+        const commandForm = document.getElementById('command-form');
 
-        console.log("Script loaded. Command form found:", commandForm ? 'Yes' : 'No');
+        // Format and append log lines
+        function appendLog(text) {
+            const isNearBottom = consoleOutput.scrollHeight - consoleOutput.scrollTop - consoleOutput.clientHeight < 100;
+            const lines = text.split('\n');
+            lines.forEach(line => {
+                if (line.trim()) {
+                    const div = document.createElement('div');
+                    div.className = 'log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded';
+                    div.textContent = line;
+                    consoleOutput.appendChild(div);
+                }
+            });
 
-        function updateStatus() {
-            fetch("{{ url_for('status_api') }}")
-                .then(response => response.json())
-                .then(data => {
-                    const currentStatus = statusElement.textContent;
-                    if (currentStatus !== data.status) {
-                         statusElement.textContent = data.status;
-                         const isRunning = data.status === 'Running';
-                         startButton.disabled = isRunning;
-                         stopButton.disabled = !isRunning;
-                         if(commandInput) commandInput.disabled = !isRunning;
-                         if(sendButton) sendButton.disabled = !isRunning;
-                         // Update class for color
-                         statusElement.className = isRunning ? 'status-running' : 'status-stopped';
-                    }
-                })
-                .catch(error => console.error('Error fetching status:', error));
+            if (isNearBottom) {
+                consoleOutput.scrollTo({
+                    top: consoleOutput.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
         }
 
-        let isFetchingLogs = false;
-        function updateLogs() {
-            if (isFetchingLogs) return;
-            isFetchingLogs = true;
+        // Socket.IO events
+        socket.on('connect', () => {
+            wsIndicator.className = 'w-2 h-2 rounded-full bg-emerald-500';
+            wsText.textContent = 'Connected';
+        });
 
-            fetch("{{ url_for('logs_api') }}")
-                .then(response => {
-                    if (!response.ok) {
-                         if (response.status === 401) {
-                             console.warn("Log API access denied. Redirecting to login.");
-                         }
-                         throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                 })
+        socket.on('disconnect', () => {
+            wsIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
+            wsText.textContent = 'Disconnected';
+        });
+
+        socket.on('log_update', (data) => {
+            appendLog(data.data);
+        });
+
+        // Status polling (fallback)
+        function updateStatus() {
+            fetch("{{ url_for('status_api') }}")
+                .then(r => r.json())
                 .then(data => {
-                    const newLogContent = data.logs.join('');
-                    if (logsElement && logsElement.textContent !== newLogContent) {
-                        logsElement.textContent = newLogContent;
-                        if (logsElement.parentElement) {
-                           logsElement.parentElement.scrollTop = logsElement.parentElement.scrollHeight;
+                    const isRunning = data.status === 'Running';
+                    const currentStatus = statusElement.textContent;
+
+                    if (currentStatus !== data.status) {
+                        statusElement.textContent = data.status;
+                        statusElement.className = isRunning ? 'text-sm text-emerald-400' : 'text-sm text-red-400';
+                        statusIndicator.className = isRunning
+                            ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
+                            : 'w-4 h-4 rounded-full bg-red-500 status-stopped';
+
+                        startButton.disabled = isRunning;
+                        stopButton.disabled = !isRunning;
+                        commandInput.disabled = !isRunning;
+                        sendButton.disabled = !isRunning;
+
+                        // Update button styles
+                        if (isRunning) {
+                            startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                            stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105';
+                            sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm';
+                        } else {
+                            startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105';
+                            stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                            sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
                         }
                     }
                 })
-                .catch(error => {
-                    console.error('Error fetching logs:', error);
-                })
-                .finally(() => {
-                    isFetchingLogs = false;
-                });
+                .catch(console.error);
         }
 
-        // Initial calls
+        // Command form submission
+        if (commandForm) {
+            commandForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (statusElement.textContent !== 'Running') {
+                    showToast('Server is not running', 'error');
+                    return;
+                }
+
+                const formData = new FormData(commandForm);
+                fetch(commandForm.action, { method: 'POST', body: formData })
+                    .then(r => {
+                        if (r.ok) commandInput.value = '';
+                    })
+                    .catch(console.error);
+            });
+        }
+
+        // Toast system
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            const colors = {
+                success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
+                error: 'bg-red-500/20 border-red-500/50 text-red-300',
+                warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
+                info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+            };
+
+            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+            toast.innerHTML = `
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm">${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button>
+                </div>
+            `;
+
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        // Load flashed messages
+        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => {
+            showToast(el.dataset.message, el.dataset.category);
+        });
+
+        // Initial status check and interval
         updateStatus();
-        updateLogs();
-
-        // Intervals
         setInterval(updateStatus, 5000);
-        setInterval(updateLogs, 2000);
 
-        // Command form submission logic
-         if (commandForm) {
-             commandForm.addEventListener('submit', function(event) {
-                 console.log("Command form submitted.");
-                 event.preventDefault();
-
-                 const currentStatus = statusElement.textContent;
-                 if (currentStatus !== 'Running') {
-                     console.warn("Attempted to send command while server is not running.");
-                     // Consider using toast here
-                     alert("Cannot send command: Server is not running.");
-                     return;
-                 }
-
-                 if (sendButton) sendButton.disabled = true;
-                 if (commandInput) commandInput.disabled = true;
-
-                 const formData = new FormData(commandForm);
-                 const commandValue = formData.get('command');
-                 console.log(`Preparing to send command: ${commandValue}`);
-
-                 fetch(commandForm.action, {
-                     method: 'POST',
-                     body: formData,
-                 })
-                 .then(response => {
-                      console.log('Fetch response status:', response.status);
-                      if (!response.ok) {
-                           console.error(`Error sending command: ${response.statusText}`);
-                           // Consider using toast here
-                           throw new Error(`Command failed with status ${response.status}`);
-                      }
-                      if (commandInput) commandInput.value = '';
-                      setTimeout(updateLogs, 250);
-                 })
-                 .catch(error => {
-                     console.error('Error sending command via fetch:', error);
-                      // Consider using toast here
-                     if (logsElement) logsElement.textContent += "\nError sending command.";
-                      const isRunning = statusElement.textContent === 'Running';
-                      if (commandInput) commandInput.disabled = !isRunning;
-                      if (sendButton) sendButton.disabled = !isRunning;
-                 })
-                 .finally(() => {
-                      const isRunning = statusElement.textContent === 'Running';
-                      console.log(`Command fetch finally block. Server running: ${isRunning}`);
-                      if (commandInput) commandInput.disabled = !isRunning;
-                      if (sendButton) sendButton.disabled = !isRunning;
-                 });
-             });
-         } else {
-              console.error("Command form element not found!");
-         }
-
+        // Initial scroll to bottom
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
     </script>
-    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
-    <script src="{{ url_for('static', filename='toast.js') }}"></script>
 </body>
+
 </html>
