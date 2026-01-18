@@ -575,10 +575,19 @@
                 document.removeEventListener('turbo:before-visit', cleanup);
             }, { once: true });
 
-            // Initial scroll to bottom (delayed for Turbo/layout rendering)
-            setTimeout(() => {
-                consoleOutput.scrollTop = consoleOutput.scrollHeight;
-            }, 100);
+            // Initial scroll to bottom (Aggressive attempts to handle Turbo/Rendering race conditions)
+            function forceScroll() {
+                if (consoleOutput) {
+                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                }
+            }
+
+            // Try immediately, then on next frame, then after delays
+            forceScroll();
+            requestAnimationFrame(forceScroll);
+            setTimeout(forceScroll, 50);
+            setTimeout(forceScroll, 200);
+            setTimeout(forceScroll, 500);
         })();
     </script>
 </body>
