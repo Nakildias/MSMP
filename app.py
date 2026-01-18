@@ -128,7 +128,15 @@ app = Flask(__name__)
 app.secret_key = load_secret_key()
 
 # --- Socket.IO Setup ---
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='eventlet',
+    ping_timeout=60,      # How long to wait for pong response (seconds)
+    ping_interval=25,     # How often to send ping (seconds) - keeps connection alive
+    logger=False,         # Disable verbose logging
+    engineio_logger=False # Disable engine.io logging
+)
 
 # Track last log position for real-time streaming
 last_log_position = 0

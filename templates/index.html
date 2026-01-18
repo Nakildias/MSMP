@@ -372,17 +372,44 @@
 
     <script>
         (function () {
-            // Socket.IO connection (with guard for SPA navigation)
+            // =====================================================
+            // ROBUST CONSOLE WEBSOCKET WITH AUTO-RECONNECTION
+            // =====================================================
+            
+            // Configuration
+            const CONFIG = {
+                MAX_LOG_LINES: 2000,           // Maximum log lines to keep in DOM
+                PRUNE_AMOUNT: 500,             // Lines to remove when pruning
+                HEARTBEAT_INTERVAL: 30000,     // 30 seconds heartbeat check
+                RECONNECT_BASE_DELAY: 1000,    // 1 second initial reconnect delay
+                RECONNECT_MAX_DELAY: 30000,    // 30 seconds max reconnect delay
+                STALE_CONNECTION_TIMEOUT: 60000, // 60 seconds without data = stale
+                STATUS_POLL_INTERVAL: 5000,    // 5 seconds status poll
+                STATS_POLL_INTERVAL: 3000      // 3 seconds stats poll
+            };
+
+            // Guard against socket.io not loaded
             if (typeof io === 'undefined') {
                 console.warn('Socket.IO not loaded');
                 return;
             }
 
-            // Prevent duplicate socket connections
-            if (window._socketInitialized) return;
-            window._socketInitialized = true;
+            // State management - use a unique session ID to track connections
+            const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+            
+            // Clean up any previous socket connection from SPA navigation
+            if (window._consoleSocket) {
+                try {
+                    window._consoleSocket.disconnect();
+                } catch (e) { /* ignore */ }
+                window._consoleSocket = null;
+            }
+            if (window._consoleCleanup) {
+                window._consoleCleanup();
+                window._consoleCleanup = null;
+            }
 
-            const socket = io();
+            // DOM Elements (cached with null checks)
             const consoleOutput = document.getElementById('console-output');
             const wsIndicator = document.getElementById('ws-indicator');
             const wsText = document.getElementById('ws-text');
@@ -394,8 +421,6 @@
             const commandInput = document.getElementById('command-input');
             const sendButton = document.getElementById('send-button');
             const commandForm = document.getElementById('command-form');
-
-            // System stats elements
             const cpuBar = document.getElementById('cpu-bar');
             const cpuValue = document.getElementById('cpu-value');
             const ramBar = document.getElementById('ram-bar');
@@ -403,18 +428,94 @@
             const diskBar = document.getElementById('disk-bar');
             const diskValue = document.getElementById('disk-value');
 
-            // Format and append log lines
+            // Verify critical elements exist
+            if (!consoleOutput || !wsIndicator || !wsText) {
+                console.error('Critical console elements not found');
+                return;
+            }
+
+            // Connection state
+            let lastDataReceived = Date.now();
+            let reconnectAttempts = 0;
+            let isDestroyed = false;
+            let intervals = [];
+            let timeouts = [];
+
+            // Safe interval/timeout management
+            function safeSetInterval(fn, delay) {
+                const id = setInterval(() => {
+                    if (!isDestroyed) fn();
+                }, delay);
+                intervals.push(id);
+                return id;
+            }
+
+            function safeSetTimeout(fn, delay) {
+                const id = setTimeout(() => {
+                    if (!isDestroyed) fn();
+                }, delay);
+                timeouts.push(id);
+                return id;
+            }
+
+            // Initialize Socket.IO with reconnection options
+            const socket = io({
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: CONFIG.RECONNECT_BASE_DELAY,
+                reconnectionDelayMax: CONFIG.RECONNECT_MAX_DELAY,
+                timeout: 20000,
+                transports: ['websocket', 'polling'] // Prefer websocket, fallback to polling
+            });
+            window._consoleSocket = socket;
+
+            // Update connection status UI
+            function updateConnectionStatus(status, color) {
+                if (isDestroyed) return;
+                const colorClasses = {
+                    green: 'bg-emerald-500',
+                    red: 'bg-red-500',
+                    yellow: 'bg-yellow-500',
+                    gray: 'bg-gray-500'
+                };
+                wsIndicator.className = `w-2 h-2 rounded-full ${colorClasses[color] || colorClasses.gray}`;
+                wsText.textContent = status;
+            }
+
+            // Prune old log lines to prevent DOM bloat
+            function pruneLogLines() {
+                if (!consoleOutput) return;
+                const lines = consoleOutput.querySelectorAll('.log-line');
+                if (lines.length > CONFIG.MAX_LOG_LINES) {
+                    const toRemove = lines.length - CONFIG.MAX_LOG_LINES + CONFIG.PRUNE_AMOUNT;
+                    for (let i = 0; i < toRemove && i < lines.length; i++) {
+                        lines[i].remove();
+                    }
+                    console.log(`Pruned ${toRemove} old log lines`);
+                }
+            }
+
+            // Append log lines with DOM management
             function appendLog(text) {
+                if (isDestroyed || !consoleOutput) return;
+                
                 const isNearBottom = consoleOutput.scrollHeight - consoleOutput.scrollTop - consoleOutput.clientHeight < 100;
                 const lines = text.split('\n');
+                const fragment = document.createDocumentFragment();
+                
                 lines.forEach(line => {
                     if (line.trim()) {
                         const div = document.createElement('div');
                         div.className = 'log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded';
                         div.textContent = line;
-                        consoleOutput.appendChild(div);
+                        fragment.appendChild(div);
                     }
                 });
+                
+                consoleOutput.appendChild(fragment);
+                
+                // Prune if needed (debounced via RAF)
+                requestAnimationFrame(pruneLogLines);
 
                 if (isNearBottom) {
                     consoleOutput.scrollTo({
@@ -424,65 +525,124 @@
                 }
             }
 
-            // Socket.IO events
+            // Socket.IO event handlers
             socket.on('connect', () => {
-                wsIndicator.className = 'w-2 h-2 rounded-full bg-emerald-500';
-                wsText.textContent = 'Connected';
+                if (isDestroyed) return;
+                console.log('Socket connected');
+                updateConnectionStatus('Connected', 'green');
+                reconnectAttempts = 0;
+                lastDataReceived = Date.now();
             });
 
-            socket.on('disconnect', () => {
-                wsIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
-                wsText.textContent = 'Disconnected';
+            socket.on('disconnect', (reason) => {
+                if (isDestroyed) return;
+                console.log('Socket disconnected:', reason);
+                updateConnectionStatus('Disconnected', 'red');
+                
+                // If server initiated disconnect, attempt reconnect
+                if (reason === 'io server disconnect') {
+                    socket.connect();
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                if (isDestroyed) return;
+                reconnectAttempts++;
+                const delay = Math.min(CONFIG.RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts), CONFIG.RECONNECT_MAX_DELAY);
+                updateConnectionStatus(`Reconnecting... (${reconnectAttempts})`, 'yellow');
+                console.log(`Connection error, retry in ${delay}ms:`, error.message);
+            });
+
+            socket.on('reconnect', (attemptNumber) => {
+                if (isDestroyed) return;
+                console.log('Reconnected after', attemptNumber, 'attempts');
+                updateConnectionStatus('Connected', 'green');
+                reconnectAttempts = 0;
+                lastDataReceived = Date.now();
             });
 
             socket.on('log_update', (data) => {
+                if (isDestroyed) return;
+                lastDataReceived = Date.now();
                 appendLog(data.data);
             });
 
-            // Status polling (fallback)
+            // Heartbeat - detect stale connections
+            function checkConnectionHealth() {
+                if (isDestroyed) return;
+                
+                const timeSinceData = Date.now() - lastDataReceived;
+                
+                // If connected but no data for too long, connection might be stale
+                if (socket.connected && timeSinceData > CONFIG.STALE_CONNECTION_TIMEOUT) {
+                    console.log('Connection appears stale, forcing reconnect...');
+                    updateConnectionStatus('Reconnecting...', 'yellow');
+                    socket.disconnect();
+                    safeSetTimeout(() => {
+                        if (!isDestroyed) socket.connect();
+                    }, 500);
+                }
+            }
+
+            // Status polling
             function updateStatus() {
+                if (isDestroyed || !statusElement) return;
+                
                 fetch("{{ url_for('status_api') }}")
                     .then(r => r.json())
                     .then(data => {
+                        if (isDestroyed) return;
+                        
                         const isRunning = data.status === 'Running';
                         const currentStatus = statusElement.textContent;
 
                         if (currentStatus !== data.status) {
                             statusElement.textContent = data.status;
                             statusElement.className = isRunning ? 'text-sm text-emerald-400' : 'text-sm text-red-400';
-                            statusIndicator.className = isRunning
-                                ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
-                                : 'w-4 h-4 rounded-full bg-red-500 status-stopped';
+                            
+                            if (statusIndicator) {
+                                statusIndicator.className = isRunning
+                                    ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
+                                    : 'w-4 h-4 rounded-full bg-red-500 status-stopped';
+                            }
 
-                            startButton.disabled = isRunning;
-                            stopButton.disabled = !isRunning;
-                            commandInput.disabled = !isRunning;
-                            sendButton.disabled = !isRunning;
+                            if (startButton) startButton.disabled = isRunning;
+                            if (stopButton) stopButton.disabled = !isRunning;
+                            if (commandInput) commandInput.disabled = !isRunning;
+                            if (sendButton) sendButton.disabled = !isRunning;
 
                             // Update button styles
                             if (isRunning) {
-                                startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
-                                stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105';
-                                restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105';
-                                restartButton.disabled = false;
-                                sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm';
+                                if (startButton) startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                if (stopButton) stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105';
+                                if (restartButton) {
+                                    restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105';
+                                    restartButton.disabled = false;
+                                }
+                                if (sendButton) sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm';
                             } else {
-                                startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105';
-                                stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
-                                restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
-                                restartButton.disabled = true;
-                                sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
+                                if (startButton) startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105';
+                                if (stopButton) stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                if (restartButton) {
+                                    restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                    restartButton.disabled = true;
+                                }
+                                if (sendButton) sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
                             }
                         }
                     })
-                    .catch(console.error);
+                    .catch(err => {
+                        if (!isDestroyed) console.error('Status poll error:', err);
+                    });
             }
 
             // Command form submission
             if (commandForm) {
                 commandForm.addEventListener('submit', function (e) {
                     e.preventDefault();
-                    if (statusElement.textContent !== 'Running') {
+                    if (isDestroyed) return;
+                    
+                    if (statusElement && statusElement.textContent !== 'Running') {
                         showToast('Server is not running', 'error');
                         return;
                     }
@@ -490,15 +650,21 @@
                     const formData = new FormData(commandForm);
                     fetch(commandForm.action, { method: 'POST', body: formData })
                         .then(r => {
-                            if (r.ok) commandInput.value = '';
+                            if (r.ok && commandInput) commandInput.value = '';
                         })
-                        .catch(console.error);
+                        .catch(err => {
+                            if (!isDestroyed) console.error('Command send error:', err);
+                        });
                 });
             }
 
             // Toast system
             function showToast(message, type = 'info') {
+                if (isDestroyed) return;
+                
                 const container = document.getElementById('toast-container');
+                if (!container) return;
+                
                 const toast = document.createElement('div');
 
                 const colors = {
@@ -517,10 +683,14 @@
             `;
 
                 container.appendChild(toast);
-                setTimeout(() => {
-                    toast.classList.remove('toast-enter');
-                    toast.classList.add('toast-exit');
-                    setTimeout(() => toast.remove(), 300);
+                safeSetTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.classList.remove('toast-enter');
+                        toast.classList.add('toast-exit');
+                        safeSetTimeout(() => {
+                            if (toast.parentNode) toast.remove();
+                        }, 300);
+                    }
                 }, 5000);
             }
 
@@ -528,9 +698,6 @@
             document.querySelectorAll('#toast-messages div[data-message]').forEach(el => {
                 showToast(el.dataset.message, el.dataset.category);
             });
-
-            // Initial status check
-            updateStatus();
 
             // System stats polling
             function getBarColor(percent) {
@@ -540,62 +707,101 @@
             }
 
             function updateSystemStats() {
+                if (isDestroyed) return;
+                
                 fetch('{{ url_for("system_stats") }}')
                     .then(r => r.json())
                     .then(data => {
-                        if (data.error) return;
+                        if (isDestroyed || data.error) return;
 
                         // CPU
-                        cpuBar.style.width = data.cpu + '%';
-                        cpuBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.cpu);
-                        cpuValue.textContent = data.cpu + '%';
+                        if (cpuBar && cpuValue) {
+                            cpuBar.style.width = data.cpu + '%';
+                            cpuBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.cpu);
+                            cpuValue.textContent = data.cpu + '%';
+                        }
 
                         // RAM
-                        ramBar.style.width = data.ram_percent + '%';
-                        ramBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.ram_percent);
-                        ramValue.textContent = data.ram_used.toFixed(1) + ' / ' + data.ram_total.toFixed(1) + ' GB';
+                        if (ramBar && ramValue) {
+                            ramBar.style.width = data.ram_percent + '%';
+                            ramBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.ram_percent);
+                            ramValue.textContent = data.ram_used.toFixed(1) + ' / ' + data.ram_total.toFixed(1) + ' GB';
+                        }
 
                         // Disk
-                        diskBar.style.width = data.disk_percent + '%';
-                        diskBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.disk_percent);
-                        diskValue.textContent = data.disk_used.toFixed(0) + ' / ' + data.disk_total.toFixed(0) + ' GB';
+                        if (diskBar && diskValue) {
+                            diskBar.style.width = data.disk_percent + '%';
+                            diskBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.disk_percent);
+                            diskValue.textContent = data.disk_used.toFixed(0) + ' / ' + data.disk_total.toFixed(0) + ' GB';
+                        }
                     })
-                    .catch(console.error);
+                    .catch(err => {
+                        if (!isDestroyed) console.error('Stats poll error:', err);
+                    });
             }
 
+            // Start intervals
+            updateStatus();
             updateSystemStats();
-            const statsInterval = setInterval(updateSystemStats, 3000);
-            const statusInterval = setInterval(updateStatus, 5000);
+            
+            safeSetInterval(updateSystemStats, CONFIG.STATS_POLL_INTERVAL);
+            safeSetInterval(updateStatus, CONFIG.STATUS_POLL_INTERVAL);
+            safeSetInterval(checkConnectionHealth, CONFIG.HEARTBEAT_INTERVAL);
+
+            // Cleanup function
+            function cleanup() {
+                console.log('Cleaning up console connections...');
+                isDestroyed = true;
+                
+                // Clear all intervals and timeouts
+                intervals.forEach(id => clearInterval(id));
+                timeouts.forEach(id => clearTimeout(id));
+                intervals = [];
+                timeouts = [];
+                
+                // Disconnect socket
+                if (socket) {
+                    socket.disconnect();
+                }
+                
+                window._consoleSocket = null;
+                window._consoleCleanup = null;
+            }
+            
+            window._consoleCleanup = cleanup;
 
             // Cleanup on Turbo navigation
-            document.addEventListener('turbo:before-visit', function cleanup() {
-                clearInterval(statsInterval);
-                clearInterval(statusInterval);
-                window._socketInitialized = false;
-                document.removeEventListener('turbo:before-visit', cleanup);
-            }, { once: true });
+            function handleTurboCleanup() {
+                cleanup();
+                document.removeEventListener('turbo:before-visit', handleTurboCleanup);
+            }
+            document.addEventListener('turbo:before-visit', handleTurboCleanup);
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', cleanup);
 
             // Initial scroll to bottom
             function forceScroll() {
+                if (isDestroyed) return;
                 const el = document.getElementById('console-output');
                 if (el) {
                     el.scrollTop = el.scrollHeight;
                 }
             }
 
-            // Run immediately
+            // Run immediately and with delays for SPA
             forceScroll();
+            safeSetTimeout(forceScroll, 0);
+            safeSetTimeout(forceScroll, 100);
+            safeSetTimeout(forceScroll, 500);
 
-            // Run on next tick
-            setTimeout(forceScroll, 0);
+            // Run when Turbo says content is loaded
+            const turboLoadHandler = () => { forceScroll(); document.removeEventListener("turbo:load", turboLoadHandler); };
+            const turboRenderHandler = () => { forceScroll(); document.removeEventListener("turbo:render", turboRenderHandler); };
+            document.addEventListener("turbo:load", turboLoadHandler);
+            document.addEventListener("turbo:render", turboRenderHandler);
 
-            // Run when Turbo explicitly says content is loaded (handles back/forward/nav transitions)
-            document.addEventListener("turbo:load", forceScroll, { once: true });
-            document.addEventListener("turbo:render", forceScroll, { once: true });
-
-            // Backup enforcement
-            setTimeout(forceScroll, 100);
-            setTimeout(forceScroll, 500);
+            console.log('Console initialized with session:', sessionId);
         })();
     </script>
 </body>
