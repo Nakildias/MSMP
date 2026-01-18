@@ -206,11 +206,27 @@ def create_backup():
         
         print(f"Creating backup: {backup_path}")
         
-        # Create tar.gz backup (exclude the Backups directory itself)
-        with tarfile.open(backup_path, "w:gz") as tar:
-            for item in MINECRAFT_SERVER_PATH.iterdir():
-                if item.name != 'Backups' and not item.name.startswith('.'):
-                    tar.add(item, arcname=item.name)
+        # Use system tar for non-blocking compression (offloads CPU work from Python process)
+        try:
+            # We explicitly exclude Backups dir itself and hidden files
+            cmd = ["tar", "-czf", str(backup_path), "--exclude=./Backups", "--exclude=./.*", "."]
+            
+            # Using subprocess instead of tarfile python module prevents blocking the EventLoop/GIL
+            subprocess.run(
+                cmd,
+                cwd=str(MINECRAFT_SERVER_PATH),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        except subprocess.CalledProcessError as e:
+            return False, f"Tar command failed: {e.stderr.decode()}"
+        except FileNotFoundError:
+             print("System 'tar' command not found, falling back to Python tarfile (MAY BLOCK)...")
+             with tarfile.open(backup_path, "w:gz") as tar:
+                for item in MINECRAFT_SERVER_PATH.iterdir():
+                    if item.name != 'Backups' and not item.name.startswith('.'):
+                        tar.add(item, arcname=item.name)
         
         print(f"Backup created successfully: {backup_name}")
         
