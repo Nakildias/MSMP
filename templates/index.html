@@ -575,18 +575,26 @@
                 document.removeEventListener('turbo:before-visit', cleanup);
             }, { once: true });
 
-            // Initial scroll to bottom (Aggressive attempts to handle Turbo/Rendering race conditions)
+            // Initial scroll to bottom
             function forceScroll() {
-                if (consoleOutput) {
-                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                const el = document.getElementById('console-output');
+                if (el) {
+                    el.scrollTop = el.scrollHeight;
                 }
             }
 
-            // Try immediately, then on next frame, then after delays
+            // Run immediately
             forceScroll();
-            requestAnimationFrame(forceScroll);
-            setTimeout(forceScroll, 50);
-            setTimeout(forceScroll, 200);
+
+            // Run on next tick
+            setTimeout(forceScroll, 0);
+
+            // Run when Turbo explicitly says content is loaded (handles back/forward/nav transitions)
+            document.addEventListener("turbo:load", forceScroll, { once: true });
+            document.addEventListener("turbo:render", forceScroll, { once: true });
+
+            // Backup enforcement
+            setTimeout(forceScroll, 100);
             setTimeout(forceScroll, 500);
         })();
     </script>
