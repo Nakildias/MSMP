@@ -575,8 +575,10 @@
                 document.removeEventListener('turbo:before-visit', cleanup);
             }, { once: true });
 
-            // Initial scroll to bottom
-            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            // Initial scroll to bottom (delayed for Turbo/layout rendering)
+            setTimeout(() => {
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }, 100);
         })();
     </script>
 </body>
