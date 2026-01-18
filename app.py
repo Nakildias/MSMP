@@ -11,6 +11,7 @@ import sqlite3
 import tarfile
 import random
 import string
+import psutil
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -443,6 +444,27 @@ def render_file_error(message, category="error", suggest_parent_path=None, is_ro
          return redirect(url_for('files')) # Redirect to root file browser on error
     else: # Should ideally not be reached if logic above is correct
          return render_template("file_error.html", error_message=message)
+
+
+def is_htmx_request():
+    """Check if the current request is an HTMX request."""
+    return request.headers.get('HX-Request') == 'true'
+
+
+def render_spa(template_name, **context):
+    """Render template with SPA support. Returns partial for HTMX, full for normal."""
+    # Add common context
+    context['brand_name'] = manager_settings.get('BRAND_NAME', DEFAULT_SETTINGS['BRAND_NAME'])
+    context['brand_color'] = manager_settings.get('BRAND_COLOR', DEFAULT_SETTINGS['BRAND_COLOR'])
+    context['has_custom_icon'] = (Path(__file__).parent / 'static' / 'icon.png').exists()
+    context['status'] = "Running" if is_server_running() else "Stopped"
+    
+    if is_htmx_request():
+        # For HTMX requests, return just the content block
+        return render_template(template_name, **context)
+    else:
+        # For full page loads, wrap in base template
+        return render_template(template_name, **context)
 
 @app.template_filter('basename')
 def basename_filter(s):
@@ -877,187 +899,233 @@ def index():
 @app.route('/start', methods=['POST'])
 @login_required
 def start_server():
-    """Starts the Minecraft server subprocess."""
+    """Initiates a server start in the background (non-blocking)."""
     global server_process
+
     if is_server_running():
         flash("Server is already running.", "warning")
         return redirect(url_for('index'))
 
     server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
     if not server_jar_path.is_file():
-         flash(f"Server JAR not found at: {server_jar_path}", "error")
-         return redirect(url_for('index'))
+        flash(f"Server JAR not found at: {server_jar_path}", "error")
+        return redirect(url_for('index'))
 
-    command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
-    try:
-        print(f"Starting server with command: {' '.join(command)}")
-        print(f"Working directory: {MINECRAFT_SERVER_PATH}")
-        preexec_fn = os.setsid if os.name != 'nt' else None
-        server_process = subprocess.Popen(
-            command,
-            cwd=str(MINECRAFT_SERVER_PATH),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            encoding='utf-8',
-            errors='replace',
-            bufsize=1,
-            preexec_fn=preexec_fn
-        )
-        print(f"Server process started with PID: {server_process.pid}")
-        time.sleep(1)
-        if server_process.poll() is not None:
-             stderr_output = server_process.stderr.read()
-             print(f"Server process failed to start. Exit code: {server_process.returncode}")
-             print(f"Stderr: {stderr_output}")
-             flash(f"Server failed to start (check console logs). Stderr: {stderr_output[:500]}...", "error")
-             server_process = None
-             return redirect(url_for('index'))
+    flash("Server starting...", "info")
 
-        flash("Server starting...", "success")
-        time.sleep(4)
-    except FileNotFoundError:
-        print(f"Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        flash(f"Error: '{JAVA_EXECUTABLE}' not found. Ensure Java is installed and accessible.", "error")
-        server_process = None
-    except Exception as e:
-        print(f"Failed to start server: {e}")
-        flash(f"Failed to start server: {e}", "error")
-        server_process = None
+    def do_start():
+        global server_process
+        command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
+        try:
+            print(f"Background start: Starting server with command: {' '.join(command)}")
+            print(f"Background start: Working directory: {MINECRAFT_SERVER_PATH}")
+            preexec_fn = os.setsid if os.name != 'nt' else None
+            server_process = subprocess.Popen(
+                command,
+                cwd=str(MINECRAFT_SERVER_PATH),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                preexec_fn=preexec_fn
+            )
+            print(f"Background start: Server process started with PID: {server_process.pid}")
+            
+            # Brief pause to catch immediate failures
+            time.sleep(1)
+            if server_process.poll() is not None:
+                stderr_output = server_process.stderr.read() if server_process.stderr else ""
+                print(f"Background start: Server failed immediately. Exit: {server_process.returncode}")
+                print(f"Background start: Stderr: {stderr_output}")
+                server_process = None
+        except FileNotFoundError:
+            print(f"Background start: '{JAVA_EXECUTABLE}' not found.")
+            server_process = None
+        except Exception as e:
+            print(f"Background start: Failed to start server: {e}")
+            server_process = None
+
+    threading.Thread(target=do_start, daemon=True).start()
     return redirect(url_for('index'))
 
 
 @app.route('/stop', methods=['POST'])
 @login_required
 def stop_server():
-    """Stops the Minecraft server using stdin 'stop', with fallback (thread-safe)."""
+    """Initiates a server stop in the background (non-blocking)."""
     global server_process, user_initiated_stop
 
-    with server_management_lock: # Acquire lock for duration of stop attempt
-        if not server_process or server_process.poll() is not None:
-            flash("Server is not running.", "warning")
-            server_process = None # Ensure it's clear if already stopped
-            user_initiated_stop = True # Treat as intentional stop even if already stopped
-            return redirect(url_for('index'))
-
-        # --- Set the flag BEFORE attempting to stop ---
+    # Quick check without blocking
+    if not server_process or server_process.poll() is not None:
+        flash("Server is not running.", "warning")
+        server_process = None
         user_initiated_stop = True
-        print("Stop route: User initiated stop flag SET.")
-        # ---------------------------------------------
+        return redirect(url_for('index'))
 
-        current_process = server_process # Local reference within lock
-        stopped_cleanly = False
+    # Set the flag immediately
+    user_initiated_stop = True
+    print("Stop route: User initiated stop flag SET. Spawning background stop task.")
+    flash("Server shutdown initiated...", "info")
 
-        # 1. Try graceful shutdown via stdin
-        try:
-            print("Sending 'stop' command via stdin...")
-            if current_process.stdin and not current_process.stdin.closed:
-                current_process.stdin.write("stop\n")
-                current_process.stdin.flush()
-                flash("Stop command sent via stdin.", "info") # Changed to info, success on confirmation
-                # Wait for the process to terminate after sending 'stop'
-                try:
-                    current_process.wait(timeout=20) # Generous timeout for MC shutdown
-                    print("Server process stopped gracefully after stdin 'stop'.")
-                    flash("Server stopped gracefully.", "success")
-                    stopped_cleanly = True
-                except subprocess.TimeoutExpired:
-                    print("Server did not stop gracefully via stdin within timeout.")
-                    flash("Server did not stop via stdin within 20s, attempting force.", "warning")
-                except Exception as wait_err: # Catch other potential errors during wait
-                     print(f"Error waiting for server process after stop command: {wait_err}")
-                     flash("Error waiting for server shutdown, attempting force.", "warning")
-            else:
-                print("Server process stdin closed or unavailable.")
-                flash("Could not send 'stop' (stdin unavailable). Attempting force.", "warning")
-        except (OSError, BrokenPipeError) as e:
-            print(f"Error writing 'stop' to stdin: {e}")
-            flash(f"Error sending stop command ({e}). Attempting force.", "warning")
-        except Exception as e: # Catch unexpected errors during stdin write/flush
-            print(f"Unexpected error sending 'stop' command: {e}")
-            flash(f"Unexpected error during stop command ({e}). Attempting force.", "warning")
+    # Spawn background thread for the actual stop logic
+    def do_stop():
+        global server_process
+        with server_management_lock:
+            current_process = server_process
+            if not current_process or current_process.poll() is not None:
+                server_process = None
+                return
 
-        # 2. Force termination if necessary (still holding lock)
-        # Check again if process exists and hasn't terminated on its own
-        if not stopped_cleanly and current_process and current_process.poll() is None:
-            flash("Attempting forceful termination.", "warning")
+            stopped_cleanly = False
+
+            # 1. Try graceful shutdown via stdin
             try:
-                pid_to_terminate = current_process.pid
-                print(f"Terminating server process group (PID: {pid_to_terminate})...")
-
-                # Try SIGTERM first (more graceful kill) using process group
-                killed = False
-                if os.name != 'nt' and hasattr(os, 'killpg') and hasattr(os, 'getpgid'):
+                print("Background stop: Sending 'stop' command via stdin...")
+                if current_process.stdin and not current_process.stdin.closed:
+                    current_process.stdin.write("stop\n")
+                    current_process.stdin.flush()
                     try:
-                        pgid = os.getpgid(pid_to_terminate)
-                        os.killpg(pgid, signal.SIGTERM)
-                        print(f"Sent SIGTERM to process group {pgid}.")
-                    except ProcessLookupError:
-                        print("Process group already gone before SIGTERM.")
-                        killed = True # Already stopped
-                    except Exception as kill_err:
-                        print(f"Error sending SIGTERM to process group: {kill_err}. Falling back to terminate().")
-                        current_process.terminate() # Fallback to single process terminate
-                else: # Windows or fallback
-                    print("Sending SIGTERM via terminate().")
-                    current_process.terminate()
+                        current_process.wait(timeout=20)
+                        print("Background stop: Server stopped gracefully.")
+                        stopped_cleanly = True
+                    except subprocess.TimeoutExpired:
+                        print("Background stop: Timeout waiting for graceful stop.")
+                    except Exception as e:
+                        print(f"Background stop: Error waiting: {e}")
+                else:
+                    print("Background stop: stdin unavailable.")
+            except Exception as e:
+                print(f"Background stop: Error sending stop: {e}")
 
-                # Wait for termination after SIGTERM/terminate()
-                if not killed:
+            # 2. Force termination if necessary
+            if not stopped_cleanly and current_process and current_process.poll() is None:
+                try:
+                    pid = current_process.pid
+                    print(f"Background stop: Sending SIGTERM to {pid}...")
+                    if os.name != 'nt' and hasattr(os, 'killpg'):
+                        try:
+                            pgid = os.getpgid(pid)
+                            os.killpg(pgid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        except Exception:
+                            current_process.terminate()
+                    else:
+                        current_process.terminate()
+
                     try:
                         current_process.wait(timeout=10)
-                        print("Server process terminated after SIGTERM/terminate().")
-                        flash("Server process terminated.", "success")
-                        killed = True
+                        print("Background stop: Terminated after SIGTERM.")
                     except subprocess.TimeoutExpired:
-                        print("Server process did not terminate after SIGTERM/terminate(), sending SIGKILL.")
-                        flash("Server process unresponsive, forcing kill.", "warning")
-                    except Exception as term_wait_err:
-                         print(f"Error waiting after SIGTERM/terminate: {term_wait_err}")
-                         flash("Error waiting for termination, attempting force kill.", "warning")
-
-                # Send SIGKILL if still alive (force kill)
-                if not killed and current_process.poll() is None:
-                    if os.name != 'nt' and hasattr(os, 'killpg') and hasattr(os, 'getpgid'):
+                        print("Background stop: SIGTERM timeout, sending SIGKILL...")
+                        if os.name != 'nt' and hasattr(os, 'killpg'):
+                            try:
+                                pgid = os.getpgid(pid)
+                                os.killpg(pgid, signal.SIGKILL)
+                            except Exception:
+                                current_process.kill()
+                        else:
+                            current_process.kill()
                         try:
-                            pgid = os.getpgid(pid_to_terminate) # Get pgid again just in case
-                            os.killpg(pgid, signal.SIGKILL)
-                            print(f"Sent SIGKILL to process group {pgid}.")
-                        except ProcessLookupError:
-                             print("Process group already gone before SIGKILL.")
-                        except Exception as kill_err:
-                             print(f"Error sending SIGKILL to process group: {kill_err}. Falling back to kill().")
-                             current_process.kill() # Fallback to single process kill
-                    else: # Windows or fallback
-                        print("Sending SIGKILL via kill().")
-                        current_process.kill()
+                            current_process.wait(timeout=5)
+                            print("Background stop: Killed.")
+                        except Exception as e:
+                            print(f"Background stop: Failed to kill: {e}")
+                except ProcessLookupError:
+                    pass
+                except Exception as e:
+                    print(f"Background stop: Error during force stop: {e}")
 
-                    try:
-                        current_process.wait(timeout=5) # Should die quickly after SIGKILL
-                        print("Server process killed.")
-                        flash("Server process killed.", "success")
-                    except subprocess.TimeoutExpired:
-                         print("Error: Server process failed to die even after SIGKILL!")
-                         flash("CRITICAL: Failed to kill server process!", "error")
-                    except Exception as kill_wait_err:
-                         print(f"Error waiting after SIGKILL: {kill_wait_err}")
-                         flash("Error waiting after kill signal.", "error")
+            print("Background stop: Clearing server_process handle.")
+            server_process = None
 
-            except ProcessLookupError: # If process disappeared during the forceful stop logic
-                flash("Server process stopped during termination attempt.", "info")
-            except Exception as e:
-                print(f"Error during forceful termination: {e}")
-                flash(f"Error terminating server process: {e}.", "error")
-
-        # --- Finally, clear the global process variable ---
-        # This happens regardless of how it stopped, as the intent was to stop.
-        print("Stop route: Clearing global server_process handle.")
-        server_process = None
-        # user_initiated_stop remains True
-
-    # Lock is released automatically upon exiting 'with' block
+    threading.Thread(target=do_stop, daemon=True).start()
     return redirect(url_for('index'))
+
+
+@app.route('/restart', methods=['POST'])
+@login_required
+def restart_server():
+    """Restart the server (stop then start) in background."""
+    global server_process, user_initiated_stop
+
+    if not is_server_running():
+        flash("Server is not running. Starting instead.", "info")
+        return redirect(url_for('start_server'))
+
+    user_initiated_stop = True
+    flash("Server restarting...", "info")
+
+    def do_restart():
+        global server_process, user_initiated_stop
+        # Stop phase
+        with server_management_lock:
+            current_process = server_process
+            if current_process and current_process.poll() is None:
+                try:
+                    if current_process.stdin and not current_process.stdin.closed:
+                        current_process.stdin.write("stop\n")
+                        current_process.stdin.flush()
+                        current_process.wait(timeout=20)
+                except:
+                    try:
+                        current_process.terminate()
+                        current_process.wait(timeout=10)
+                    except:
+                        current_process.kill()
+                        current_process.wait(timeout=5)
+            server_process = None
+
+        # Brief pause
+        time.sleep(2)
+
+        # Start phase
+        server_jar_path = MINECRAFT_SERVER_PATH / SERVER_JAR_NAME
+        if not server_jar_path.is_file():
+            print("Restart: Server JAR not found")
+            return
+
+        command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
+        try:
+            preexec_fn = os.setsid if os.name != 'nt' else None
+            server_process = subprocess.Popen(
+                command, cwd=str(MINECRAFT_SERVER_PATH),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True, encoding='utf-8', errors='replace',
+                bufsize=1, preexec_fn=preexec_fn
+            )
+            user_initiated_stop = False
+            print(f"Restart: Server started with PID {server_process.pid}")
+        except Exception as e:
+            print(f"Restart: Failed to start - {e}")
+            server_process = None
+
+    threading.Thread(target=do_restart, daemon=True).start()
+    return redirect(url_for('index'))
+
+
+@app.route('/api/system_stats')
+@login_required
+def system_stats():
+    """API endpoint for system resource usage."""
+    try:
+        cpu = psutil.cpu_percent(interval=0.1)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        return jsonify({
+            'cpu': round(cpu, 1),
+            'ram_percent': round(ram.percent, 1),
+            'ram_used': round(ram.used / (1024**3), 2),
+            'ram_total': round(ram.total / (1024**3), 2),
+            'disk_percent': round(disk.percent, 1),
+            'disk_used': round(disk.used / (1024**3), 2),
+            'disk_total': round(disk.total / (1024**3), 2)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def monitor_server():
     """Background thread function to monitor the server process and restart if needed."""
@@ -1461,6 +1529,12 @@ def rename_item():
     if original_full_path == MINECRAFT_SERVER_PATH: flash("Cannot rename the root server directory.", "error"); return redirect(url_for('files', subpath=''))
 
     new_full_path = original_full_path.parent / new_name
+    
+    # Check if name hasn't changed
+    if original_full_path == new_full_path:
+        flash("No changes were made.", "info")
+        return redirect(redirect_target)
+
     # Extra safety check on the *new* path
     if not is_safe_path(new_full_path): flash("Renaming would create an unsafe path.", "error"); return redirect(redirect_target)
     if new_full_path.exists(): flash(f"'{new_name}' already exists.", "error"); return redirect(redirect_target)
@@ -1885,12 +1959,16 @@ def status_api():
 @app.route('/backup_now', methods=['POST'])
 @login_required
 def backup_now():
-    """Manually trigger a backup."""
-    success, result = create_backup()
-    if success:
-        return jsonify(success=True, message=f"Backup created: {result}")
-    else:
-        return jsonify(success=False, message=f"Backup failed: {result}")
+    """Manually trigger a backup (non-blocking)."""
+    def do_backup():
+        success, result = create_backup()
+        if success:
+            print(f"Background backup completed: {result}")
+        else:
+            print(f"Background backup failed: {result}")
+    
+    threading.Thread(target=do_backup, daemon=True).start()
+    return jsonify(success=True, message="Backup started in background...")
 
 @app.route('/logs_api')
 @login_required

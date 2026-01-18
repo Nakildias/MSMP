@@ -3,9 +3,32 @@
 
 <head>
     <meta charset="UTF-8">
+    <!-- CodeMirror Import Map -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
+        "@codemirror/view": "https://esm.sh/@codemirror/view@6.28.1?external=@codemirror/state,@lezer/common",
+        "@codemirror/language": "https://esm.sh/@codemirror/language@6.10.2?external=@codemirror/state,@codemirror/view,@lezer/common,@lezer/highlight,@lezer/lr",
+        "@codemirror/commands": "https://esm.sh/@codemirror/commands@6.6.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
+        "@codemirror/search": "https://esm.sh/@codemirror/search@6.5.6?external=@codemirror/state,@codemirror/view",
+        "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6.17.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
+        "@codemirror/lint": "https://esm.sh/@codemirror/lint@6.8.1?external=@codemirror/state,@codemirror/view",
+        "@codemirror/lang-python": "https://esm.sh/@codemirror/lang-python@6.1.6?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6.2.2?external=@codemirror/state,@codemirror/language,@codemirror/view,@codemirror/autocomplete,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6.0.1?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@codemirror/lang-yaml": "https://esm.sh/@codemirror/lang-yaml@6.0.0?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
+        "@lezer/common": "https://esm.sh/@lezer/common@1.2.1",
+        "@lezer/highlight": "https://esm.sh/@lezer/highlight@1.2.0?external=@lezer/common",
+        "@lezer/lr": "https://esm.sh/@lezer/lr@1.4.1?external=@lezer/common"
+      }
+    }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ 'Edit' if can_edit else 'View' }} - {{ filename }} - {{ brand_name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module" src="https://unpkg.com/@hotwired/turbo@7.3.0/dist/turbo.es2017-esm.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
@@ -109,6 +132,10 @@
             line-height: 1.5rem;
             tab-size: 4;
         }
+    /* Turbo SPA transitions */
+        .turbo-progress-bar { background: linear-gradient(to right, #10b981, #34d399); height: 3px; position: fixed; top: 0; left: 0; z-index: 9999; }
+        html.turbo-loading { cursor: progress; }
+        html.turbo-loading body { opacity: 0.8; transition: opacity 0.15s ease; }
     </style>
 </head>
 
@@ -392,30 +419,13 @@
             color: #6b7280;
             user-select: none;
         }
+    /* Turbo SPA transitions */
+        .turbo-progress-bar { background: linear-gradient(to right, #10b981, #34d399); height: 3px; position: fixed; top: 0; left: 0; z-index: 9999; }
+        html.turbo-loading { cursor: progress; }
+        html.turbo-loading body { opacity: 0.8; transition: opacity 0.15s ease; }
     </style>
     {% endif %}
 
-    <!-- CodeMirror Import Map -->
-    <script type="importmap">
-    {
-      "imports": {
-        "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
-        "@codemirror/view": "https://esm.sh/@codemirror/view@6.28.1?external=@codemirror/state,@lezer/common",
-        "@codemirror/language": "https://esm.sh/@codemirror/language@6.10.2?external=@codemirror/state,@codemirror/view,@lezer/common,@lezer/highlight,@lezer/lr",
-        "@codemirror/commands": "https://esm.sh/@codemirror/commands@6.6.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
-        "@codemirror/search": "https://esm.sh/@codemirror/search@6.5.6?external=@codemirror/state,@codemirror/view",
-        "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6.17.0?external=@codemirror/state,@codemirror/view,@codemirror/language,@lezer/common",
-        "@codemirror/lint": "https://esm.sh/@codemirror/lint@6.8.1?external=@codemirror/state,@codemirror/view",
-        "@codemirror/lang-python": "https://esm.sh/@codemirror/lang-python@6.1.6?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
-        "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6.2.2?external=@codemirror/state,@codemirror/language,@codemirror/view,@codemirror/autocomplete,@lezer/common,@lezer/highlight",
-        "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6.0.1?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
-        "@codemirror/lang-yaml": "https://esm.sh/@codemirror/lang-yaml@6.0.0?external=@codemirror/state,@codemirror/language,@codemirror/view,@lezer/common,@lezer/highlight",
-        "@lezer/common": "https://esm.sh/@lezer/common@1.2.1",
-        "@lezer/highlight": "https://esm.sh/@lezer/highlight@1.2.0?external=@lezer/common",
-        "@lezer/lr": "https://esm.sh/@lezer/lr@1.4.1?external=@lezer/common"
-      }
-    }
-    </script>
 
     <!-- CodeMirror & Logic -->
     <script type="module">

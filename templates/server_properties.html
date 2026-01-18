@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Server Properties - {{ brand_name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="module" src="https://unpkg.com/@hotwired/turbo@7.3.0/dist/turbo.es2017-esm.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
@@ -89,6 +91,26 @@
 
         .save-bar {
             animation: slideUp 0.3s ease-out;
+        }
+
+        /* Turbo SPA transitions */
+        .turbo-progress-bar {
+            background: linear-gradient(to right, #10b981, #34d399);
+            height: 3px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            transition: width 0.3s ease;
+        }
+
+        html.turbo-loading {
+            cursor: progress;
+        }
+
+        html.turbo-loading body {
+            opacity: 0.8;
+            transition: opacity 0.15s ease;
         }
     </style>
 </head>
@@ -182,13 +204,13 @@
                         data-key="{{ item.key | lower }}">
                         <label for="prop-{{ item.key }}" class="block text-sm font-mono text-gray-300 mb-2 truncate"
                             title="{{ item.key }}">{{ item.key }}</label>
-                        {% if item.value in ['true', 'false'] %}
+                        {% if item.value|lower in ['true', 'false', 'on', 'off'] %}
                         <div class="flex items-center justify-between">
                             <span class="text-xs text-gray-500">{{ item.value }}</span>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" name="{{ item.key }}" id="prop-{{ item.key }}" {% if
-                                    item.value=='true' %}checked{% endif %} class="sr-only peer prop-input"
-                                    data-original="{{ item.value }}">
+                                    item.value|lower in ['true', 'on' ] %}checked{% endif %}
+                                    class="sr-only peer prop-input" data-original="{{ item.value }}">
                                 <input type="hidden" name="{{ item.key }}_bool" value="false">
                                 <div
                                     class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600">
@@ -237,94 +259,137 @@
     </div>
 
     <script>
-        const form = document.getElementById('properties-form');
-        const saveBar = document.getElementById('save-bar');
-        const changeCount = document.getElementById('change-count');
-        const inputs = document.querySelectorAll('.prop-input');
-        const searchInput = document.getElementById('search-input');
-        const propertyItems = document.querySelectorAll('.property-item');
+        (function () {
+            const form = document.getElementById('properties-form');
+            const saveBar = document.getElementById('save-bar');
+            const changeCount = document.getElementById('change-count');
+            const inputs = document.querySelectorAll('.prop-input');
+            const searchInput = document.getElementById('search-input');
+            const propertyItems = document.querySelectorAll('.property-item');
 
-        // Search functionality
-        searchInput.addEventListener('input', () => {
-            const query = searchInput.value.toLowerCase();
-            propertyItems.forEach(item => {
-                const key = item.dataset.key;
-                item.style.display = key.includes(query) ? '' : 'none';
-            });
-        });
-
-        // Change detection
-        function checkChanges() {
-            let changedCount = 0;
-            inputs.forEach(input => {
-                const original = input.dataset.original;
-                let current;
-                if (input.type === 'checkbox') {
-                    current = input.checked ? 'true' : 'false';
-                } else {
-                    current = input.value;
-                }
-                if (original !== current) {
-                    changedCount++;
-                    input.closest('.property-item')?.classList.add('border-amber-500/50');
-                } else {
-                    input.closest('.property-item')?.classList.remove('border-amber-500/50');
-                }
+            // Search functionality
+            searchInput.addEventListener('input', () => {
+                const query = searchInput.value.toLowerCase();
+                propertyItems.forEach(item => {
+                    const key = item.dataset.key;
+                    item.style.display = key.includes(query) ? '' : 'none';
+                });
             });
 
-            if (changedCount > 0) {
-                saveBar.classList.remove('hidden');
-                changeCount.textContent = `(${changedCount} changed)`;
-            } else {
-                saveBar.classList.add('hidden');
-            }
-        }
-
-        inputs.forEach(input => {
-            input.addEventListener('change', checkChanges);
-            input.addEventListener('input', checkChanges);
-        });
-
-        // Handle boolean checkboxes for form submission
-        form.addEventListener('submit', (e) => {
-            inputs.forEach(input => {
-                if (input.type === 'checkbox') {
-                    const hiddenInput = input.parentElement.querySelector('input[type="hidden"]');
-                    if (hiddenInput) {
-                        hiddenInput.value = input.checked ? 'true' : 'false';
-                        hiddenInput.name = input.name;
-                        input.removeAttribute('name');
+            // Change detection
+            function checkChanges() {
+                let changedCount = 0;
+                inputs.forEach(input => {
+                    const original = input.dataset.original;
+                    let current;
+                    if (input.type === 'checkbox') {
+                        // Check logic handles typical true/false/on/off
+                        const isChecked = input.checked;
+                        // If original was 'on', match 'on', otherwise 'true' for default
+                        if (original === 'on' || original === 'off') {
+                            current = isChecked ? 'on' : 'off';
+                        } else {
+                            current = isChecked ? 'true' : 'false';
+                        }
+                        // Simple boolean mismatch check
+                        const originalBool = (original === 'true' || original === 'on');
+                        if (isChecked !== originalBool) {
+                            current = isChecked ? 'true' : 'false'; // Force standard boolean for new change
+                        } else {
+                            current = original;
+                        }
+                    } else {
+                        current = input.value;
                     }
-                }
-            });
-        });
 
-        document.getElementById('save-btn').addEventListener('click', () => form.submit());
+                    // Simplified string compare
+                    if (input.type === 'checkbox') {
+                        const originalBool = (original === 'true' || original === 'on');
+                        if (input.checked !== originalBool) {
+                            changedCount++;
+                            input.closest('.property-item')?.classList.add('border-amber-500/50');
+                        } else {
+                            input.closest('.property-item')?.classList.remove('border-amber-500/50');
+                        }
+                    } else {
+                        if (original !== current) {
+                            changedCount++;
+                            input.closest('.property-item')?.classList.add('border-amber-500/50');
+                        } else {
+                            input.closest('.property-item')?.classList.remove('border-amber-500/50');
+                        }
+                    }
+                });
 
-        document.getElementById('discard-btn').addEventListener('click', () => {
-            inputs.forEach(input => {
-                const original = input.dataset.original;
-                if (input.type === 'checkbox') {
-                    input.checked = original === 'true';
+                if (changedCount > 0) {
+                    saveBar.classList.remove('hidden');
+                    changeCount.textContent = `(${changedCount} changed)`;
                 } else {
-                    input.value = original;
+                    saveBar.classList.add('hidden');
                 }
-                input.closest('.property-item')?.classList.remove('border-amber-500/50');
-            });
-            saveBar.classList.add('hidden');
-        });
+            }
 
-        // Toast
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
-            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
-            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
-            container.appendChild(toast);
-            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
-        }
-        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+            inputs.forEach(input => {
+                input.addEventListener('change', checkChanges);
+                input.addEventListener('input', checkChanges);
+            });
+
+            // Handle boolean checkboxes for form submission
+            function prepareCheckboxes() {
+                inputs.forEach(input => {
+                    if (input.type === 'checkbox') {
+                        const hiddenInput = input.parentElement.querySelector('input[type="hidden"]');
+                        if (hiddenInput) {
+                            hiddenInput.value = input.checked ? 'true' : 'false';
+                            hiddenInput.name = input.name;
+                            // Important: don't remove name from checkbox until submit time
+                            // or just rely on hidden input overriding if name is same?
+                            // Actually, if we rename checkbox, it won't submit.
+                            input.removeAttribute('name');
+                        }
+                    }
+                });
+            }
+
+            form.addEventListener('submit', (e) => {
+                prepareCheckboxes();
+            });
+
+            document.getElementById('save-btn').addEventListener('click', () => {
+                if (form.requestSubmit) {
+                    form.requestSubmit();
+                } else {
+                    // Fallback for older browsers
+                    prepareCheckboxes();
+                    form.submit();
+                }
+            });
+
+            document.getElementById('discard-btn').addEventListener('click', () => {
+                inputs.forEach(input => {
+                    const original = input.dataset.original;
+                    if (input.type === 'checkbox') {
+                        input.checked = original === 'true';
+                    } else {
+                        input.value = original;
+                    }
+                    input.closest('.property-item')?.classList.remove('border-amber-500/50');
+                });
+                saveBar.classList.add('hidden');
+            });
+
+            // Toast
+            function showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+                toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+                toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+                container.appendChild(toast);
+                setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+            }
+            document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+        })();
     </script>
 </body>
 

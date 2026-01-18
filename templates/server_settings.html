@@ -7,6 +7,8 @@
     <meta name="color-scheme" content="dark">
     <title>Server Settings - {{ brand_name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="module" src="https://unpkg.com/@hotwired/turbo@7.3.0/dist/turbo.es2017-esm.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
@@ -144,6 +146,10 @@
             box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
             border-color: #10b981;
         }
+    /* Turbo SPA transitions */
+        .turbo-progress-bar { background: linear-gradient(to right, #10b981, #34d399); height: 3px; position: fixed; top: 0; left: 0; z-index: 9999; transition: width 0.3s ease; }
+        html.turbo-loading { cursor: progress; }
+        html.turbo-loading body { opacity: 0.8; transition: opacity 0.15s ease; }
     </style>
 </head>
 
@@ -681,6 +687,7 @@
     </div>
 
     <script>
+(function() {
         const form = document.getElementById('settings-form');
         const saveBar = document.getElementById('save-bar');
         const inputs = document.querySelectorAll('.setting-input');
@@ -939,6 +946,7 @@
             btn.disabled = false;
             btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download Icon';
         });
+})();
     </script>
     <!-- Regenerate Key Modal -->
     <div id="regen-key-modal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog"
@@ -985,6 +993,7 @@
     </div>
 
     <script>
+(function() {
         async function regenerateSecretKey() {
             const btn = document.querySelector('#regen-key-modal button.bg-red-600');
             const originalText = btn.textContent;
@@ -1014,6 +1023,7 @@
                 btn.disabled = false;
             }
         }
+})();
     </script>
 </body>
 

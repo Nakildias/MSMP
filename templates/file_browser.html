@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Manager - {{ current_path or 'Server Root' }} - {{ brand_name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="module" src="https://unpkg.com/@hotwired/turbo@7.3.0/dist/turbo.es2017-esm.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
@@ -116,6 +118,26 @@
             background: rgba(99, 102, 241, 0.15) !important;
             outline: 2px dashed rgba(129, 140, 248, 0.5);
             outline-offset: -2px;
+        }
+
+        /* Turbo SPA transitions */
+        .turbo-progress-bar {
+            background: linear-gradient(to right, #10b981, #34d399);
+            height: 3px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            transition: width 0.3s ease;
+        }
+
+        html.turbo-loading {
+            cursor: progress;
+        }
+
+        html.turbo-loading body {
+            opacity: 0.8;
+            transition: opacity 0.15s ease;
         }
     </style>
 </head>
@@ -583,420 +605,433 @@
     </main>
 
     <script>
-        // === Upload Drag and Drop ===
-        const dropZone = document.getElementById('drop-zone');
-        const dropOverlay = document.getElementById('drop-overlay');
-        const fileInput = document.getElementById('file-input');
-        const uploadForm = document.getElementById('upload-form');
-        const uploadProgress = document.getElementById('upload-progress');
-        const uploadBar = document.getElementById('upload-bar');
-        const uploadPercent = document.getElementById('upload-percent');
-        const uploadFilename = document.getElementById('upload-filename');
+        (function () {
+            // === Upload Drag and Drop ===
+            const dropZone = document.getElementById('drop-zone');
+            const dropOverlay = document.getElementById('drop-overlay');
+            const fileInput = document.getElementById('file-input');
+            const uploadForm = document.getElementById('upload-form');
+            const uploadProgress = document.getElementById('upload-progress');
+            const uploadBar = document.getElementById('upload-bar');
+            const uploadPercent = document.getElementById('upload-percent');
+            const uploadFilename = document.getElementById('upload-filename');
 
-        let dragCounter = 0;
-        let internalDragActive = false; // Track if we're doing internal drag
+            let dragCounter = 0;
+            let internalDragActive = false; // Track if we're doing internal drag
 
-        // Check if drag contains external files (upload) vs internal text (move)
-        function isExternalFileDrag(e) {
-            return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes('text/x-file-path');
-        }
+            // Check if drag contains external files (upload) vs internal text (move)
+            function isExternalFileDrag(e) {
+                return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes('text/x-file-path');
+            }
 
-        document.addEventListener('dragenter', (e) => {
-            e.preventDefault();
-            if (internalDragActive) return; // Skip overlay for internal drags
-            if (!isExternalFileDrag(e)) return;
+            document.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                if (internalDragActive) return; // Skip overlay for internal drags
+                if (!isExternalFileDrag(e)) return;
 
-            dragCounter++;
-            dropOverlay.classList.remove('hidden');
-            dropZone.classList.add('drop-active', 'border-emerald-500');
-        });
+                dragCounter++;
+                dropOverlay.classList.remove('hidden');
+                dropZone.classList.add('drop-active', 'border-emerald-500');
+            });
 
-        document.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            if (internalDragActive) return;
+            document.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                if (internalDragActive) return;
 
-            dragCounter--;
-            if (dragCounter === 0) {
+                dragCounter--;
+                if (dragCounter === 0) {
+                    dropOverlay.classList.add('hidden');
+                    dropZone.classList.remove('drop-active', 'border-emerald-500');
+                }
+            });
+
+            document.addEventListener('dragover', (e) => e.preventDefault());
+
+            document.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                if (internalDragActive) return; // Handled by row drop handler
+
+                dragCounter = 0;
                 dropOverlay.classList.add('hidden');
                 dropZone.classList.remove('drop-active', 'border-emerald-500');
-            }
-        });
 
-        document.addEventListener('dragover', (e) => e.preventDefault());
-
-        document.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            if (internalDragActive) return; // Handled by row drop handler
-
-            dragCounter = 0;
-            dropOverlay.classList.add('hidden');
-            dropZone.classList.remove('drop-active', 'border-emerald-500');
-
-            if (e.dataTransfer.items) {
-                const items = Array.from(e.dataTransfer.items);
-                const filesWithPaths = await scanFiles(items);
-                if (filesWithPaths.length > 0) showUploadConfirmation(filesWithPaths);
-            } else {
-                const files = Array.from(e.dataTransfer.files).map(f => ({ file: f, path: '' }));
-                if (files.length > 0) showUploadConfirmation(files);
-            }
-        });
-
-        async function scanFiles(items) {
-            const filesWithPaths = [];
-            const queue = [];
-
-            for (const item of items) {
-                if (item.kind === 'file') {
-                    const entry = item.webkitGetAsEntry();
-                    if (entry) queue.push(traverseEntry(entry, ""));
-                }
-            }
-
-            async function traverseEntry(entry, path) {
-                if (entry.isFile) {
-                    const file = await new Promise(resolve => entry.file(resolve));
-                    filesWithPaths.push({ file, path });
-                } else if (entry.isDirectory) {
-                    const reader = entry.createReader();
-                    const entries = await new Promise(resolve => {
-                        let result = [];
-                        const read = () => {
-                            reader.readEntries(batch => {
-                                if (batch.length) {
-                                    result = result.concat(batch);
-                                    read();
-                                } else resolve(result);
-                            });
-                        };
-                        read();
-                    });
-                    const newPath = path ? `${path}/${entry.name}` : entry.name;
-                    await Promise.all(entries.map(e => traverseEntry(e, newPath)));
-                }
-            }
-
-            await Promise.all(queue);
-            return filesWithPaths;
-        }
-
-        // === Internal Drag and Drop (Moving Files) ===
-        const moveModal = document.getElementById('move-modal');
-        let pendingMove = null; // { sourcePath, sourceName, sourceIsDir, targetPath, targetName }
-
-        // Make rows draggable
-        document.querySelectorAll('.draggable-row').forEach(row => {
-            row.addEventListener('dragstart', (e) => {
-                internalDragActive = true;
-                row.classList.add('dragging');
-                e.dataTransfer.setData('text/x-file-path', row.dataset.path);
-                e.dataTransfer.setData('text/x-file-name', row.dataset.name);
-                e.dataTransfer.setData('text/x-is-dir', row.dataset.isDir);
-                e.dataTransfer.effectAllowed = 'move';
-            });
-
-            row.addEventListener('dragend', () => {
-                internalDragActive = false;
-                row.classList.remove('dragging');
-                document.querySelectorAll('.drop-target, .drop-target-parent').forEach(el => {
-                    el.classList.remove('drop-target', 'drop-target-parent');
-                });
-            });
-        });
-
-        // Make folders droppable
-        document.querySelectorAll('.droppable-folder').forEach(folder => {
-            folder.addEventListener('dragover', (e) => {
-                if (!internalDragActive) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-
-                // Don't allow dropping on self
-                const draggedPath = e.dataTransfer.getData('text/x-file-path') || document.querySelector('.dragging')?.dataset.path;
-                if (draggedPath === folder.dataset.path) return;
-
-                folder.classList.add(folder.dataset.isParent ? 'drop-target-parent' : 'drop-target');
-            });
-
-            folder.addEventListener('dragleave', () => {
-                folder.classList.remove('drop-target', 'drop-target-parent');
-            });
-
-            folder.addEventListener('drop', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                folder.classList.remove('drop-target', 'drop-target-parent');
-
-                const sourcePath = e.dataTransfer.getData('text/x-file-path');
-                const sourceName = e.dataTransfer.getData('text/x-file-name');
-                const sourceIsDir = e.dataTransfer.getData('text/x-is-dir') === 'true';
-                const targetPath = folder.dataset.path;
-                const targetName = folder.dataset.name;
-
-                // Don't allow dropping on self
-                if (sourcePath === targetPath) return;
-
-                // Show confirmation modal
-                showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName);
-            });
-        });
-
-        function showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName) {
-            pendingMove = { sourcePath, sourceName, sourceIsDir, targetPath, targetName };
-
-            const itemType = sourceIsDir ? 'directory' : 'file';
-            const targetDisplay = targetName || 'Server Root';
-
-            document.getElementById('move-modal-message').textContent =
-                `Are you sure you want to move this ${itemType}?`;
-            document.getElementById('move-item-icon').textContent = sourceIsDir ? '📁' : '📄';
-            document.getElementById('move-item-name').textContent = sourceName;
-            document.getElementById('move-target-name').textContent = targetDisplay;
-
-            moveModal.classList.remove('hidden');
-        }
-
-        function closeMoveModal() {
-            moveModal.classList.add('hidden');
-            pendingMove = null;
-        }
-
-        async function confirmMove() {
-            if (!pendingMove) return;
-
-            const { sourcePath, targetPath } = pendingMove;
-            closeMoveModal();
-
-            try {
-                const response = await fetch('{{ url_for("api_move_item") }}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        source_path: sourcePath,
-                        target_dir: targetPath
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showToast(data.message, 'success');
-                    setTimeout(() => location.reload(), 500);
+                if (e.dataTransfer.items) {
+                    const items = Array.from(e.dataTransfer.items);
+                    const filesWithPaths = await scanFiles(items);
+                    if (filesWithPaths.length > 0) showUploadConfirmation(filesWithPaths);
                 } else {
-                    showToast(data.message, 'error');
+                    const files = Array.from(e.dataTransfer.files).map(f => ({ file: f, path: '' }));
+                    if (files.length > 0) showUploadConfirmation(files);
                 }
-            } catch (err) {
-                showToast('Failed to move item: ' + err.message, 'error');
+            });
+
+            async function scanFiles(items) {
+                const filesWithPaths = [];
+                const queue = [];
+
+                for (const item of items) {
+                    if (item.kind === 'file') {
+                        const entry = item.webkitGetAsEntry();
+                        if (entry) queue.push(traverseEntry(entry, ""));
+                    }
+                }
+
+                async function traverseEntry(entry, path) {
+                    if (entry.isFile) {
+                        const file = await new Promise(resolve => entry.file(resolve));
+                        filesWithPaths.push({ file, path });
+                    } else if (entry.isDirectory) {
+                        const reader = entry.createReader();
+                        const entries = await new Promise(resolve => {
+                            let result = [];
+                            const read = () => {
+                                reader.readEntries(batch => {
+                                    if (batch.length) {
+                                        result = result.concat(batch);
+                                        read();
+                                    } else resolve(result);
+                                });
+                            };
+                            read();
+                        });
+                        const newPath = path ? `${path}/${entry.name}` : entry.name;
+                        await Promise.all(entries.map(e => traverseEntry(e, newPath)));
+                    }
+                }
+
+                await Promise.all(queue);
+                return filesWithPaths;
             }
-        }
 
-        // Close modal on Escape
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !moveModal.classList.contains('hidden')) {
-                closeMoveModal();
-            }
-        });
+            // === Internal Drag and Drop (Moving Files) ===
+            const moveModal = document.getElementById('move-modal');
+            let pendingMove = null; // { sourcePath, sourceName, sourceIsDir, targetPath, targetName }
 
-        const folderInput = document.getElementById('folder-input');
-
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                const files = Array.from(fileInput.files).map(f => ({ file: f, path: '' }));
-                showUploadConfirmation(files);
-                fileInput.value = ''; // Reset
-            }
-        });
-
-        folderInput.addEventListener('change', () => {
-            if (folderInput.files.length > 0) {
-                const files = Array.from(folderInput.files).map(f => {
-                    // webkitRelativePath is "folder/sub/file.txt", we want "folder/sub"
-                    const parts = f.webkitRelativePath.split('/');
-                    parts.pop(); // Remove filename
-                    return { file: f, path: parts.join('/') };
+            // Make rows draggable
+            document.querySelectorAll('.draggable-row').forEach(row => {
+                row.addEventListener('dragstart', (e) => {
+                    internalDragActive = true;
+                    row.classList.add('dragging');
+                    e.dataTransfer.setData('text/x-file-path', row.dataset.path);
+                    e.dataTransfer.setData('text/x-file-name', row.dataset.name);
+                    e.dataTransfer.setData('text/x-is-dir', row.dataset.isDir);
+                    e.dataTransfer.effectAllowed = 'move';
                 });
-                showUploadConfirmation(files);
-                folderInput.value = ''; // Reset
+
+                row.addEventListener('dragend', () => {
+                    internalDragActive = false;
+                    row.classList.remove('dragging');
+                    document.querySelectorAll('.drop-target, .drop-target-parent').forEach(el => {
+                        el.classList.remove('drop-target', 'drop-target-parent');
+                    });
+                });
+            });
+
+            // Make folders droppable
+            document.querySelectorAll('.droppable-folder').forEach(folder => {
+                folder.addEventListener('dragover', (e) => {
+                    if (!internalDragActive) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+
+                    // Don't allow dropping on self
+                    const draggedPath = e.dataTransfer.getData('text/x-file-path') || document.querySelector('.dragging')?.dataset.path;
+                    if (draggedPath === folder.dataset.path) return;
+
+                    folder.classList.add(folder.dataset.isParent ? 'drop-target-parent' : 'drop-target');
+                });
+
+                folder.addEventListener('dragleave', () => {
+                    folder.classList.remove('drop-target', 'drop-target-parent');
+                });
+
+                folder.addEventListener('drop', (e) => {
+                    if (!internalDragActive) return; // Allow external drops to bubble to global handler
+                    e.preventDefault();
+                    e.stopPropagation();
+                    folder.classList.remove('drop-target', 'drop-target-parent');
+
+                    const sourcePath = e.dataTransfer.getData('text/x-file-path');
+                    const sourceName = e.dataTransfer.getData('text/x-file-name');
+                    const sourceIsDir = e.dataTransfer.getData('text/x-is-dir') === 'true';
+                    const targetPath = folder.dataset.path;
+                    const targetName = folder.dataset.name;
+
+                    // Don't allow dropping on self
+                    if (sourcePath === targetPath) return;
+
+                    // Show confirmation modal
+                    showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName);
+                });
+            });
+
+            function showMoveModal(sourcePath, sourceName, sourceIsDir, targetPath, targetName) {
+                pendingMove = { sourcePath, sourceName, sourceIsDir, targetPath, targetName };
+
+                const itemType = sourceIsDir ? 'directory' : 'file';
+                const targetDisplay = targetName || 'Server Root';
+
+                document.getElementById('move-modal-message').textContent =
+                    `Are you sure you want to move this ${itemType}?`;
+                document.getElementById('move-item-icon').textContent = sourceIsDir ? '📁' : '📄';
+                document.getElementById('move-item-name').textContent = sourceName;
+                document.getElementById('move-target-name').textContent = targetDisplay;
+
+                moveModal.classList.remove('hidden');
             }
-        });
 
-        function performUpload(filesWithPaths) {
-            let uploaded = 0;
-            const total = filesWithPaths.length;
-            const targetDir = '{{ current_path }}';
+            function closeMoveModal() {
+                moveModal.classList.add('hidden');
+                pendingMove = null;
+            }
 
-            function uploadNext() {
-                if (uploaded >= total) {
-                    showToast(`Successfully uploaded ${total} item(s)`, 'success');
-                    setTimeout(() => location.reload(), 1000);
-                    return;
+            async function confirmMove() {
+                if (!pendingMove) return;
+
+                const { sourcePath, targetPath } = pendingMove;
+                closeMoveModal();
+
+                try {
+                    const response = await fetch('{{ url_for("api_move_item") }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            source_path: sourcePath,
+                            target_dir: targetPath
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                } catch (err) {
+                    showToast('Failed to move item: ' + err.message, 'error');
+                }
+            }
+
+            // Close modal on Escape
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !moveModal.classList.contains('hidden')) {
+                    closeMoveModal();
+                }
+            });
+
+            const folderInput = document.getElementById('folder-input');
+
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    const files = Array.from(fileInput.files).map(f => ({ file: f, path: '' }));
+                    showUploadConfirmation(files);
+                    fileInput.value = ''; // Reset
+                }
+            });
+
+            folderInput.addEventListener('change', () => {
+                if (folderInput.files.length > 0) {
+                    const files = Array.from(folderInput.files).map(f => {
+                        // webkitRelativePath is "folder/sub/file.txt", we want "folder/sub"
+                        const parts = f.webkitRelativePath.split('/');
+                        parts.pop(); // Remove filename
+                        return { file: f, path: parts.join('/') };
+                    });
+                    showUploadConfirmation(files);
+                    folderInput.value = ''; // Reset
+                }
+            });
+
+            function performUpload(filesWithPaths) {
+                let uploaded = 0;
+                const total = filesWithPaths.length;
+                const targetDir = '{{ current_path }}';
+
+                function uploadNext() {
+                    if (uploaded >= total) {
+                        showToast(`Successfully uploaded ${total} item(s)`, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                        return;
+                    }
+
+                    const item = filesWithPaths[uploaded];
+                    const formData = new FormData();
+                    // Send as files[] and paths[] to match the updated backend logic
+                    formData.append('files[]', item.file);
+                    formData.append('paths[]', item.path || '');
+                    formData.append('target_dir', targetDir);
+
+                    uploadProgress.classList.remove('hidden');
+                    uploadFilename.textContent = item.path ? `${item.path}/${item.file.name}` : item.file.name;
+
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', '{{ url_for("upload_file") }}', true);
+
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable) {
+                            const percent = Math.round((e.loaded / e.total) * 100);
+                            uploadBar.style.width = percent + '%';
+                            uploadPercent.textContent = percent + '%';
+                        }
+                    };
+
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            uploaded++;
+                            uploadBar.style.width = '0%';
+                            uploadPercent.textContent = '0%';
+                            uploadNext();
+                        } else {
+                            showToast(`Failed to upload ${item.file.name}: ${xhr.statusText}`, 'error');
+                            uploaded++;
+                            uploadNext();
+                        }
+                    };
+
+                    xhr.onerror = () => {
+                        showToast(`Network error uploading ${item.file.name}`, 'error');
+                        uploaded++;
+                        uploadNext();
+                    };
+
+                    xhr.send(formData);
                 }
 
-                const item = filesWithPaths[uploaded];
-                const formData = new FormData();
-                // Send as files[] and paths[] to match the updated backend logic
-                formData.append('files[]', item.file);
-                formData.append('paths[]', item.path || '');
-                formData.append('target_dir', targetDir);
-
-                uploadProgress.classList.remove('hidden');
-                uploadFilename.textContent = item.path ? `${item.path}/${item.file.name}` : item.file.name;
-
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '{{ url_for("upload_file") }}', true);
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        uploadBar.style.width = percent + '%';
-                        uploadPercent.textContent = percent + '%';
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        uploaded++;
-                        uploadBar.style.width = '0%';
-                        uploadPercent.textContent = '0%';
-                        uploadNext();
-                    } else {
-                        showToast(`Failed to upload ${item.file.name}: ${xhr.statusText}`, 'error');
-                        uploaded++;
-                        uploadNext();
-                    }
-                };
-
-                xhr.onerror = () => {
-                    showToast(`Network error uploading ${item.file.name}`, 'error');
-                    uploaded++;
-                    uploadNext();
-                };
-
-                xhr.send(formData);
+                uploadNext();
             }
 
-            uploadNext();
-        }
-
-        // Rename functionality
-        document.querySelectorAll('.rename-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const row = this.closest('tr');
-                const nameCell = row.querySelector('td:first-child');
-                const form = nameCell.querySelector('.rename-form');
-                const nameDisplay = nameCell.querySelector('div');
-                nameDisplay.classList.add('hidden');
-                form.classList.remove('hidden');
-                form.querySelector('.rename-input').focus();
-                form.querySelector('.rename-input').select();
+            // Rename functionality
+            document.querySelectorAll('.rename-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const row = this.closest('tr');
+                    const nameCell = row.querySelector('td:first-child');
+                    const form = nameCell.querySelector('.rename-form');
+                    const nameDisplay = nameCell.querySelector('div');
+                    nameDisplay.classList.add('hidden');
+                    form.classList.remove('hidden');
+                    form.querySelector('.rename-input').focus();
+                    form.querySelector('.rename-input').select();
+                });
             });
-        });
 
-        document.querySelectorAll('.rename-cancel').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const row = this.closest('tr');
-                const nameCell = row.querySelector('td:first-child');
-                const form = nameCell.querySelector('.rename-form');
-                const nameDisplay = nameCell.querySelector('div');
-                form.classList.add('hidden');
-                nameDisplay.classList.remove('hidden');
+            document.querySelectorAll('.rename-cancel').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const row = this.closest('tr');
+                    const nameCell = row.querySelector('td:first-child');
+                    const form = nameCell.querySelector('.rename-form');
+                    const nameDisplay = nameCell.querySelector('div');
+                    form.classList.add('hidden');
+                    nameDisplay.classList.remove('hidden');
+                });
             });
-        });
 
-        // Toast
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
-            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
-            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
-            container.appendChild(toast);
-            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
-        }
-        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
-        // Delete Modal
-        let deletePath = '';
+            // Toast
+            function showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+                toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+                toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+                container.appendChild(toast);
+                setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+            }
+            document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+            // Delete Modal
+            let deletePath = '';
 
-        function openDeleteModal(path, name, isDir) {
-            deletePath = path;
-            document.getElementById('delete-item-name').textContent = name;
+            function openDeleteModal(path, name, isDir) {
+                deletePath = path;
+                document.getElementById('delete-item-name').textContent = name;
 
-            const iconContainer = document.getElementById('delete-item-icon');
-            if (isDir) {
-                // Folder icon
-                iconContainer.innerHTML = '<svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>';
-            } else {
-                // File icon
-                iconContainer.innerHTML = '<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>';
+                const iconContainer = document.getElementById('delete-item-icon');
+                if (isDir) {
+                    // Folder icon
+                    iconContainer.innerHTML = '<svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>';
+                } else {
+                    // File icon
+                    iconContainer.innerHTML = '<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>';
+                }
+
+                document.getElementById('delete-modal').classList.remove('hidden');
             }
 
-            document.getElementById('delete-modal').classList.remove('hidden');
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('delete-modal').classList.add('hidden');
-            deletePath = '';
-        }
-
-        function confirmDelete() {
-            if (!deletePath) return;
-
-            // Create and submit form dynamically
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = "{{ url_for('delete_item') }}";
-
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'path';
-            input.value = deletePath;
-
-            form.appendChild(input);
-            document.body.appendChild(form);
-            form.submit();
-        }
-
-        // === Upload Confirmation Modal ===
-        const uploadModal = document.getElementById('upload-confirm-modal');
-        let pendingUploadFiles = [];
-
-        function showUploadConfirmation(filesWithPaths) {
-            pendingUploadFiles = filesWithPaths;
-            const container = document.getElementById('upload-items-list');
-            const countEl = document.getElementById('upload-items-count');
-
-            countEl.textContent = `${filesWithPaths.length} item(s)`;
-            container.innerHTML = '';
-
-            // Show first 5 items
-            filesWithPaths.slice(0, 5).forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'text-xs text-gray-400 truncate py-0.5';
-                div.textContent = item.path ? `${item.path}/${item.file.name}` : item.file.name;
-                container.appendChild(div);
-            });
-
-            if (filesWithPaths.length > 5) {
-                const more = document.createElement('div');
-                more.className = 'text-xs text-gray-500 italic mt-1';
-                more.textContent = `...and ${filesWithPaths.length - 5} more`;
-                container.appendChild(more);
+            function closeDeleteModal() {
+                document.getElementById('delete-modal').classList.add('hidden');
+                deletePath = '';
             }
 
-            uploadModal.classList.remove('hidden');
-        }
+            function confirmDelete() {
+                if (!deletePath) return;
 
-        function closeUploadModal() {
-            uploadModal.classList.add('hidden');
-            pendingUploadFiles = [];
-        }
+                // Create and submit form dynamically
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = "{{ url_for('delete_item') }}";
 
-        function confirmUpload() {
-            const files = pendingUploadFiles;
-            closeUploadModal();
-            performUpload(files);
-        }
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'path';
+                input.value = deletePath;
 
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+
+            // === Upload Confirmation Modal ===
+            const uploadModal = document.getElementById('upload-confirm-modal');
+            let pendingUploadFiles = [];
+
+            function showUploadConfirmation(filesWithPaths) {
+                pendingUploadFiles = filesWithPaths;
+                const container = document.getElementById('upload-items-list');
+                const countEl = document.getElementById('upload-items-count');
+
+                countEl.textContent = `${filesWithPaths.length} item(s)`;
+                container.innerHTML = '';
+
+                // Show first 5 items
+                filesWithPaths.slice(0, 5).forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'text-xs text-gray-400 truncate py-0.5';
+                    div.textContent = item.path ? `${item.path}/${item.file.name}` : item.file.name;
+                    container.appendChild(div);
+                });
+
+                if (filesWithPaths.length > 5) {
+                    const more = document.createElement('div');
+                    more.className = 'text-xs text-gray-500 italic mt-1';
+                    more.textContent = `...and ${filesWithPaths.length - 5} more`;
+                    container.appendChild(more);
+                }
+
+                uploadModal.classList.remove('hidden');
+            }
+
+            function closeUploadModal() {
+                uploadModal.classList.add('hidden');
+                pendingUploadFiles = [];
+            }
+
+            function confirmUpload() {
+                const files = pendingUploadFiles;
+                closeUploadModal();
+                performUpload(files);
+            }
+
+            // Expose functions to global scope for HTML attributes
+            window.openDeleteModal = openDeleteModal;
+            window.closeDeleteModal = closeDeleteModal;
+            window.confirmDelete = confirmDelete;
+            window.showUploadConfirmation = showUploadConfirmation;
+            window.closeUploadModal = closeUploadModal;
+            window.confirmUpload = confirmUpload;
+            window.closeMoveModal = closeMoveModal;
+            window.confirmMove = confirmMove;
+
+        })();
     </script>
 </body>
 

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ brand_name }} Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module" src="https://unpkg.com/@hotwired/turbo@7.3.0/dist/turbo.es2017-esm.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -120,6 +121,26 @@
                 opacity: 0;
             }
         }
+
+        /* Turbo SPA transitions */
+        .turbo-progress-bar {
+            background: linear-gradient(to right, #10b981, #34d399);
+            height: 3px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            transition: width 0.3s ease;
+        }
+
+        html.turbo-loading {
+            cursor: progress;
+        }
+
+        html.turbo-loading body {
+            opacity: 0.8;
+            transition: opacity 0.15s ease;
+        }
     </style>
 </head>
 
@@ -206,6 +227,19 @@
                 </div>
 
                 <div class="flex gap-3">
+                    <form action="{{ url_for('restart_server') }}" method="post">
+                        <button type="submit" id="restart-button"
+                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105' if status == 'Running' else 'bg-gray-700 text-gray-500 cursor-not-allowed' }}"
+                            {{ 'disabled' if status=='Stopped' }}>
+                            <span class="flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Restart
+                            </span>
+                        </button>
+                    </form>
                     <form action="{{ url_for('start_server') }}" method="post">
                         <button type="submit" id="start-button"
                             class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Running' else 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105' }}"
@@ -236,6 +270,61 @@
                             </span>
                         </button>
                     </form>
+                </div>
+            </div>
+
+            <!-- System Stats -->
+            <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <!-- CPU -->
+                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm text-gray-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                            </svg>
+                            CPU
+                        </span>
+                        <span id="cpu-value" class="text-sm font-medium text-gray-200">--</span>
+                    </div>
+                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div id="cpu-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
+                        </div>
+                    </div>
+                </div>
+                <!-- RAM -->
+                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm text-gray-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            RAM
+                        </span>
+                        <span id="ram-value" class="text-sm font-medium text-gray-200">--</span>
+                    </div>
+                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div id="ram-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
+                        </div>
+                    </div>
+                </div>
+                <!-- Disk -->
+                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm text-gray-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                            </svg>
+                            Disk
+                        </span>
+                        <span id="disk-value" class="text-sm font-medium text-gray-200">--</span>
+                    </div>
+                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div id="disk-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -282,147 +371,213 @@
     </main>
 
     <script>
-        // Socket.IO connection
-        const socket = io();
-        const consoleOutput = document.getElementById('console-output');
-        const wsIndicator = document.getElementById('ws-indicator');
-        const wsText = document.getElementById('ws-text');
-        const statusElement = document.getElementById('server-status');
-        const statusIndicator = document.getElementById('status-indicator');
-        const startButton = document.getElementById('start-button');
-        const stopButton = document.getElementById('stop-button');
-        const commandInput = document.getElementById('command-input');
-        const sendButton = document.getElementById('send-button');
-        const commandForm = document.getElementById('command-form');
+        (function () {
+            // Socket.IO connection (with guard for SPA navigation)
+            if (typeof io === 'undefined') {
+                console.warn('Socket.IO not loaded');
+                return;
+            }
 
-        // Format and append log lines
-        function appendLog(text) {
-            const isNearBottom = consoleOutput.scrollHeight - consoleOutput.scrollTop - consoleOutput.clientHeight < 100;
-            const lines = text.split('\n');
-            lines.forEach(line => {
-                if (line.trim()) {
-                    const div = document.createElement('div');
-                    div.className = 'log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded';
-                    div.textContent = line;
-                    consoleOutput.appendChild(div);
+            // Prevent duplicate socket connections
+            if (window._socketInitialized) return;
+            window._socketInitialized = true;
+
+            const socket = io();
+            const consoleOutput = document.getElementById('console-output');
+            const wsIndicator = document.getElementById('ws-indicator');
+            const wsText = document.getElementById('ws-text');
+            const statusElement = document.getElementById('server-status');
+            const statusIndicator = document.getElementById('status-indicator');
+            const startButton = document.getElementById('start-button');
+            const stopButton = document.getElementById('stop-button');
+            const restartButton = document.getElementById('restart-button');
+            const commandInput = document.getElementById('command-input');
+            const sendButton = document.getElementById('send-button');
+            const commandForm = document.getElementById('command-form');
+
+            // System stats elements
+            const cpuBar = document.getElementById('cpu-bar');
+            const cpuValue = document.getElementById('cpu-value');
+            const ramBar = document.getElementById('ram-bar');
+            const ramValue = document.getElementById('ram-value');
+            const diskBar = document.getElementById('disk-bar');
+            const diskValue = document.getElementById('disk-value');
+
+            // Format and append log lines
+            function appendLog(text) {
+                const isNearBottom = consoleOutput.scrollHeight - consoleOutput.scrollTop - consoleOutput.clientHeight < 100;
+                const lines = text.split('\n');
+                lines.forEach(line => {
+                    if (line.trim()) {
+                        const div = document.createElement('div');
+                        div.className = 'log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded';
+                        div.textContent = line;
+                        consoleOutput.appendChild(div);
+                    }
+                });
+
+                if (isNearBottom) {
+                    consoleOutput.scrollTo({
+                        top: consoleOutput.scrollHeight,
+                        behavior: 'smooth'
+                    });
                 }
+            }
+
+            // Socket.IO events
+            socket.on('connect', () => {
+                wsIndicator.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                wsText.textContent = 'Connected';
             });
 
-            if (isNearBottom) {
-                consoleOutput.scrollTo({
-                    top: consoleOutput.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }
-        }
+            socket.on('disconnect', () => {
+                wsIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
+                wsText.textContent = 'Disconnected';
+            });
 
-        // Socket.IO events
-        socket.on('connect', () => {
-            wsIndicator.className = 'w-2 h-2 rounded-full bg-emerald-500';
-            wsText.textContent = 'Connected';
-        });
+            socket.on('log_update', (data) => {
+                appendLog(data.data);
+            });
 
-        socket.on('disconnect', () => {
-            wsIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
-            wsText.textContent = 'Disconnected';
-        });
+            // Status polling (fallback)
+            function updateStatus() {
+                fetch("{{ url_for('status_api') }}")
+                    .then(r => r.json())
+                    .then(data => {
+                        const isRunning = data.status === 'Running';
+                        const currentStatus = statusElement.textContent;
 
-        socket.on('log_update', (data) => {
-            appendLog(data.data);
-        });
+                        if (currentStatus !== data.status) {
+                            statusElement.textContent = data.status;
+                            statusElement.className = isRunning ? 'text-sm text-emerald-400' : 'text-sm text-red-400';
+                            statusIndicator.className = isRunning
+                                ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
+                                : 'w-4 h-4 rounded-full bg-red-500 status-stopped';
 
-        // Status polling (fallback)
-        function updateStatus() {
-            fetch("{{ url_for('status_api') }}")
-                .then(r => r.json())
-                .then(data => {
-                    const isRunning = data.status === 'Running';
-                    const currentStatus = statusElement.textContent;
+                            startButton.disabled = isRunning;
+                            stopButton.disabled = !isRunning;
+                            commandInput.disabled = !isRunning;
+                            sendButton.disabled = !isRunning;
 
-                    if (currentStatus !== data.status) {
-                        statusElement.textContent = data.status;
-                        statusElement.className = isRunning ? 'text-sm text-emerald-400' : 'text-sm text-red-400';
-                        statusIndicator.className = isRunning
-                            ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
-                            : 'w-4 h-4 rounded-full bg-red-500 status-stopped';
-
-                        startButton.disabled = isRunning;
-                        stopButton.disabled = !isRunning;
-                        commandInput.disabled = !isRunning;
-                        sendButton.disabled = !isRunning;
-
-                        // Update button styles
-                        if (isRunning) {
-                            startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
-                            stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105';
-                            sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm';
-                        } else {
-                            startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105';
-                            stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
-                            sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
+                            // Update button styles
+                            if (isRunning) {
+                                startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105';
+                                restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105';
+                                restartButton.disabled = false;
+                                sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm';
+                            } else {
+                                startButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105';
+                                stopButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                restartButton.className = 'px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gray-700 text-gray-500 cursor-not-allowed';
+                                restartButton.disabled = true;
+                                sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
+                            }
                         }
-                    }
-                })
-                .catch(console.error);
-        }
-
-        // Command form submission
-        if (commandForm) {
-            commandForm.addEventListener('submit', function (e) {
-                e.preventDefault();
-                if (statusElement.textContent !== 'Running') {
-                    showToast('Server is not running', 'error');
-                    return;
-                }
-
-                const formData = new FormData(commandForm);
-                fetch(commandForm.action, { method: 'POST', body: formData })
-                    .then(r => {
-                        if (r.ok) commandInput.value = '';
                     })
                     .catch(console.error);
-            });
-        }
+            }
 
-        // Toast system
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
+            // Command form submission
+            if (commandForm) {
+                commandForm.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    if (statusElement.textContent !== 'Running') {
+                        showToast('Server is not running', 'error');
+                        return;
+                    }
 
-            const colors = {
-                success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
-                error: 'bg-red-500/20 border-red-500/50 text-red-300',
-                warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
-                info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
-            };
+                    const formData = new FormData(commandForm);
+                    fetch(commandForm.action, { method: 'POST', body: formData })
+                        .then(r => {
+                            if (r.ok) commandInput.value = '';
+                        })
+                        .catch(console.error);
+                });
+            }
 
-            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
-            toast.innerHTML = `
+            // Toast system
+            function showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+
+                const colors = {
+                    success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
+                    error: 'bg-red-500/20 border-red-500/50 text-red-300',
+                    warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
+                    info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+                };
+
+                toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+                toast.innerHTML = `
                 <div class="flex items-center justify-between gap-3">
                     <span class="text-sm">${message}</span>
                     <button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button>
                 </div>
             `;
 
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.classList.remove('toast-enter');
-                toast.classList.add('toast-exit');
-                setTimeout(() => toast.remove(), 300);
-            }, 5000);
-        }
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.classList.remove('toast-enter');
+                    toast.classList.add('toast-exit');
+                    setTimeout(() => toast.remove(), 300);
+                }, 5000);
+            }
 
-        // Load flashed messages
-        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => {
-            showToast(el.dataset.message, el.dataset.category);
-        });
+            // Load flashed messages
+            document.querySelectorAll('#toast-messages div[data-message]').forEach(el => {
+                showToast(el.dataset.message, el.dataset.category);
+            });
 
-        // Initial status check and interval
-        updateStatus();
-        setInterval(updateStatus, 5000);
+            // Initial status check
+            updateStatus();
 
-        // Initial scroll to bottom
-        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            // System stats polling
+            function getBarColor(percent) {
+                if (percent < 50) return 'bg-emerald-500';
+                if (percent < 80) return 'bg-amber-500';
+                return 'bg-red-500';
+            }
+
+            function updateSystemStats() {
+                fetch('{{ url_for("system_stats") }}')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.error) return;
+
+                        // CPU
+                        cpuBar.style.width = data.cpu + '%';
+                        cpuBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.cpu);
+                        cpuValue.textContent = data.cpu + '%';
+
+                        // RAM
+                        ramBar.style.width = data.ram_percent + '%';
+                        ramBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.ram_percent);
+                        ramValue.textContent = data.ram_used.toFixed(1) + ' / ' + data.ram_total.toFixed(1) + ' GB';
+
+                        // Disk
+                        diskBar.style.width = data.disk_percent + '%';
+                        diskBar.className = 'h-full transition-all duration-300 ' + getBarColor(data.disk_percent);
+                        diskValue.textContent = data.disk_used.toFixed(0) + ' / ' + data.disk_total.toFixed(0) + ' GB';
+                    })
+                    .catch(console.error);
+            }
+
+            updateSystemStats();
+            const statsInterval = setInterval(updateSystemStats, 3000);
+            const statusInterval = setInterval(updateStatus, 5000);
+
+            // Cleanup on Turbo navigation
+            document.addEventListener('turbo:before-visit', function cleanup() {
+                clearInterval(statsInterval);
+                clearInterval(statusInterval);
+                window._socketInitialized = false;
+                document.removeEventListener('turbo:before-visit', cleanup);
+            }, { once: true });
+
+            // Initial scroll to bottom
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        })();
     </script>
 </body>
 
