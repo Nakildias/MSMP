@@ -146,10 +146,26 @@
             box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
             border-color: #10b981;
         }
-    /* Turbo SPA transitions */
-        .turbo-progress-bar { background: linear-gradient(to right, #10b981, #34d399); height: 3px; position: fixed; top: 0; left: 0; z-index: 9999; transition: width 0.3s ease; }
-        html.turbo-loading { cursor: progress; }
-        html.turbo-loading body { opacity: 0.8; transition: opacity 0.15s ease; }
+
+        /* Turbo SPA transitions */
+        .turbo-progress-bar {
+            background: linear-gradient(to right, #10b981, #34d399);
+            height: 3px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            transition: width 0.3s ease;
+        }
+
+        html.turbo-loading {
+            cursor: progress;
+        }
+
+        html.turbo-loading body {
+            opacity: 0.8;
+            transition: opacity 0.15s ease;
+        }
     </style>
 </head>
 
@@ -687,266 +703,269 @@
     </div>
 
     <script>
-(function() {
-        const form = document.getElementById('settings-form');
-        const saveBar = document.getElementById('save-bar');
-        const inputs = document.querySelectorAll('.setting-input');
+        (function () {
+            const form = document.getElementById('settings-form');
+            const saveBar = document.getElementById('save-bar');
+            const inputs = document.querySelectorAll('.setting-input');
 
-        // RAM logic
-        const ramSelect = document.getElementById('JAVA_RAM');
-        const ramCustom = document.getElementById('JAVA_RAM_CUSTOM');
+            // RAM logic
+            const ramSelect = document.getElementById('JAVA_RAM');
+            const ramCustom = document.getElementById('JAVA_RAM_CUSTOM');
 
-        function initRam() {
-            const currentRam = "{{ settings.get('JAVA_RAM', default_settings['JAVA_RAM']) }}";
-            const options = Array.from(ramSelect.options).map(o => o.value);
+            function initRam() {
+                const currentRam = "{{ settings.get('JAVA_RAM', default_settings['JAVA_RAM']) }}";
+                const options = Array.from(ramSelect.options).map(o => o.value);
 
-            if (options.includes(currentRam)) {
-                ramSelect.value = currentRam;
-                ramCustom.classList.add('hidden');
-            } else {
-                ramSelect.value = 'custom';
-                ramCustom.value = currentRam;
-                ramCustom.classList.remove('hidden');
+                if (options.includes(currentRam)) {
+                    ramSelect.value = currentRam;
+                    ramCustom.classList.add('hidden');
+                } else {
+                    ramSelect.value = 'custom';
+                    ramCustom.value = currentRam;
+                    ramCustom.classList.remove('hidden');
+                }
             }
-        }
-        initRam();
+            initRam();
 
-        ramSelect.addEventListener('change', () => {
-            if (ramSelect.value === 'custom') {
-                ramCustom.classList.remove('hidden');
-                ramCustom.focus();
-            } else {
-                ramCustom.classList.add('hidden');
-                // Allow detection of change
-                ramSelect.name = 'JAVA_RAM';
-            }
-            checkChanges();
-        });
+            ramSelect.addEventListener('change', () => {
+                if (ramSelect.value === 'custom') {
+                    ramCustom.classList.remove('hidden');
+                    ramCustom.focus();
+                } else {
+                    ramCustom.classList.add('hidden');
+                    // Allow detection of change
+                    ramSelect.name = 'JAVA_RAM';
+                }
+                checkChanges();
+            });
 
-        ramCustom.addEventListener('input', () => {
-            // For custom, we handle the name attribute on submit to avoid confusion
-            checkChanges();
-        });
+            ramCustom.addEventListener('input', () => {
+                // For custom, we handle the name attribute on submit to avoid confusion
+                checkChanges();
+            });
 
-        // Tag inputs
-        document.querySelectorAll('.tag-input-wrapper').forEach(wrapper => {
-            const targetId = wrapper.dataset.target;
-            const hiddenInput = document.getElementById(targetId);
-            const input = wrapper.querySelector('input');
+            // Tag inputs
+            document.querySelectorAll('.tag-input-wrapper').forEach(wrapper => {
+                const targetId = wrapper.dataset.target;
+                const hiddenInput = document.getElementById(targetId);
+                const input = wrapper.querySelector('input');
 
-            let tags = hiddenInput.value.split(',').filter(t => t.trim());
+                let tags = hiddenInput.value.split(',').filter(t => t.trim());
 
-            function renderTags() {
-                // Remove existing tags in DOM
-                wrapper.querySelectorAll('.tag').forEach(t => t.remove());
+                function renderTags() {
+                    // Remove existing tags in DOM
+                    wrapper.querySelectorAll('.tag').forEach(t => t.remove());
 
-                // Add tags before input
-                tags.forEach(tag => {
-                    const el = document.createElement('span');
-                    el.className = 'tag';
-                    el.innerHTML = `${tag} <span class="tag-remove" data-tag="${tag}">&times;</span>`;
-                    wrapper.insertBefore(el, input);
+                    // Add tags before input
+                    tags.forEach(tag => {
+                        const el = document.createElement('span');
+                        el.className = 'tag';
+                        el.innerHTML = `${tag} <span class="tag-remove" data-tag="${tag}">&times;</span>`;
+                        wrapper.insertBefore(el, input);
 
-                    el.querySelector('.tag-remove').addEventListener('click', () => {
-                        tags = tags.filter(t => t !== tag);
-                        update();
+                        el.querySelector('.tag-remove').addEventListener('click', () => {
+                            tags = tags.filter(t => t !== tag);
+                            update();
+                        });
                     });
-                });
-            }
+                }
 
-            function update() {
-                hiddenInput.value = tags.join(',');
-                renderTags();
-                checkChanges();
-            }
+                function update() {
+                    hiddenInput.value = tags.join(',');
+                    renderTags();
+                    checkChanges();
+                }
 
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    const val = input.value.trim().replace('.', ''); // simple sanitization
-                    if (val && !tags.includes(val)) {
-                        tags.push(val);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const val = input.value.trim().replace('.', ''); // simple sanitization
+                        if (val && !tags.includes(val)) {
+                            tags.push(val);
+                            update();
+                        }
+                        input.value = '';
+                    }
+                    if (e.key === 'Backspace' && !input.value && tags.length > 0) {
+                        tags.pop();
                         update();
                     }
-                    input.value = '';
-                }
-                if (e.key === 'Backspace' && !input.value && tags.length > 0) {
-                    tags.pop();
-                    update();
-                }
+                });
+
+                renderTags();
             });
 
-            renderTags();
-        });
+            // Change detection
+            function checkChanges() {
+                let changed = false;
+                inputs.forEach(input => {
+                    const original = input.dataset.original;
+                    let current;
 
-        // Change detection
-        function checkChanges() {
-            let changed = false;
-            inputs.forEach(input => {
-                const original = input.dataset.original;
-                let current;
-
-                if (input.type === 'checkbox') {
-                    current = input.checked ? 'true' : 'false';
-                } else if (input.id === 'JAVA_RAM') {
-                    // RAM Special Handling
-                    if (ramSelect.value === 'custom') {
-                        current = ramCustom.value;
+                    if (input.type === 'checkbox') {
+                        current = input.checked ? 'true' : 'false';
+                    } else if (input.id === 'JAVA_RAM') {
+                        // RAM Special Handling
+                        if (ramSelect.value === 'custom') {
+                            current = ramCustom.value;
+                        } else {
+                            current = ramSelect.value;
+                        }
                     } else {
-                        current = ramSelect.value;
+                        current = input.value;
                     }
-                } else {
-                    current = input.value;
+
+                    if (original !== current) {
+                        changed = true;
+                        // Visual feedback could go here
+                    }
+                });
+
+                saveBar.classList.toggle('hidden', !changed);
+            }
+
+            inputs.forEach(input => input.addEventListener('input', checkChanges));
+            inputs.forEach(input => input.addEventListener('change', checkChanges));
+
+            document.getElementById('save-btn').addEventListener('click', () => {
+                // Fix RAM value if custom
+                if (ramSelect.value === 'custom') {
+                    ramSelect.removeAttribute('name');
+                    ramCustom.setAttribute('name', 'JAVA_RAM');
+                }
+                form.submit();
+            });
+
+            document.getElementById('discard-btn').addEventListener('click', () => location.reload());
+
+            function triggerManualBackup() {
+                document.getElementById('backup-modal').classList.remove('hidden');
+            }
+
+            document.getElementById('confirm-backup-btn').addEventListener('click', () => {
+                const modal = document.getElementById('backup-modal');
+                const btn = document.getElementById('confirm-backup-btn');
+
+                btn.disabled = true;
+                btn.textContent = 'Backing up...';
+                btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+                fetch("{{ url_for('backup_now') }}", { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        modal.classList.add('hidden');
+                        btn.disabled = false;
+                        btn.textContent = 'Start Backup';
+                        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+
+                        if (data.success) showToast(data.message || 'Backup started successfully', 'success');
+                        else showToast(data.message || 'Backup failed', 'error');
+                    })
+                    .catch(e => {
+                        modal.classList.add('hidden');
+                        btn.disabled = false;
+                        btn.textContent = 'Start Backup';
+                        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                        showToast('Network error: ' + e, 'error');
+                    });
+            });
+
+            // OTP Handling
+            const otpModal = document.getElementById('otp-modal');
+            const otpInput = document.getElementById('otp-input');
+            const confirmOtpBtn = document.getElementById('confirm-otp-btn');
+            const mainOtpInput = document.getElementById('main-otp-input');
+
+            if (!otpModal.classList.contains('hidden')) {
+                otpInput.focus();
+            }
+
+            confirmOtpBtn.addEventListener('click', () => {
+                const code = otpInput.value.trim();
+                if (!code) return;
+                mainOtpInput.value = code;
+
+                // Fix RAM value logic again since we are submitting
+                if (ramSelect.value === 'custom') {
+                    ramSelect.removeAttribute('name');
+                    ramCustom.setAttribute('name', 'JAVA_RAM');
                 }
 
-                if (original !== current) {
-                    changed = true;
-                    // Visual feedback could go here
+                form.submit();
+            });
+
+            otpInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') confirmOtpBtn.click();
+            });
+
+            // Toast
+            function showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
+                toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
+                toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
+                container.appendChild(toast);
+                setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
+            }
+            document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
+
+            // Color picker sync
+            const colorPicker = document.getElementById('BRAND_COLOR');
+            const colorHex = document.getElementById('BRAND_COLOR_HEX');
+
+            colorPicker.addEventListener('input', () => {
+                colorHex.value = colorPicker.value;
+                checkChanges();
+            });
+
+            colorHex.addEventListener('input', () => {
+                if (/^#[0-9A-Fa-f]{6}$/.test(colorHex.value)) {
+                    colorPicker.value = colorHex.value;
+                    checkChanges();
                 }
             });
 
-            saveBar.classList.toggle('hidden', !changed);
-        }
+            // Icon download
+            document.getElementById('download-icon-btn').addEventListener('click', async () => {
+                const urlInput = document.getElementById('BRAND_ICON_URL');
+                const url = urlInput.value.trim();
 
-        inputs.forEach(input => input.addEventListener('input', checkChanges));
-        inputs.forEach(input => input.addEventListener('change', checkChanges));
-
-        document.getElementById('save-btn').addEventListener('click', () => {
-            // Fix RAM value if custom
-            if (ramSelect.value === 'custom') {
-                ramSelect.removeAttribute('name');
-                ramCustom.setAttribute('name', 'JAVA_RAM');
-            }
-            form.submit();
-        });
-
-        document.getElementById('discard-btn').addEventListener('click', () => location.reload());
-
-        function triggerManualBackup() {
-            document.getElementById('backup-modal').classList.remove('hidden');
-        }
-
-        document.getElementById('confirm-backup-btn').addEventListener('click', () => {
-            const modal = document.getElementById('backup-modal');
-            const btn = document.getElementById('confirm-backup-btn');
-
-            btn.disabled = true;
-            btn.textContent = 'Backing up...';
-            btn.classList.add('opacity-75', 'cursor-not-allowed');
-
-            fetch("{{ url_for('backup_now') }}", { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    modal.classList.add('hidden');
-                    btn.disabled = false;
-                    btn.textContent = 'Start Backup';
-                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
-
-                    if (data.success) showToast(data.message || 'Backup started successfully', 'success');
-                    else showToast(data.message || 'Backup failed', 'error');
-                })
-                .catch(e => {
-                    modal.classList.add('hidden');
-                    btn.disabled = false;
-                    btn.textContent = 'Start Backup';
-                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
-                    showToast('Network error: ' + e, 'error');
-                });
-        });
-
-        // OTP Handling
-        const otpModal = document.getElementById('otp-modal');
-        const otpInput = document.getElementById('otp-input');
-        const confirmOtpBtn = document.getElementById('confirm-otp-btn');
-        const mainOtpInput = document.getElementById('main-otp-input');
-
-        if (!otpModal.classList.contains('hidden')) {
-            otpInput.focus();
-        }
-
-        confirmOtpBtn.addEventListener('click', () => {
-            const code = otpInput.value.trim();
-            if (!code) return;
-            mainOtpInput.value = code;
-
-            // Fix RAM value logic again since we are submitting
-            if (ramSelect.value === 'custom') {
-                ramSelect.removeAttribute('name');
-                ramCustom.setAttribute('name', 'JAVA_RAM');
-            }
-
-            form.submit();
-        });
-
-        otpInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') confirmOtpBtn.click();
-        });
-
-        // Toast
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            const colors = { success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300', error: 'bg-red-500/20 border-red-500/50 text-red-300', warning: 'bg-amber-500/20 border-amber-500/50 text-amber-300', info: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' };
-            toast.className = `${colors[type] || colors.info} border rounded-lg px-4 py-3 toast-enter backdrop-blur-sm`;
-            toast.innerHTML = `<div class="flex items-center justify-between gap-3"><span class="text-sm">${message}</span><button onclick="this.parentElement.parentElement.remove()" class="text-current opacity-60 hover:opacity-100">&times;</button></div>`;
-            container.appendChild(toast);
-            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 300); }, 5000);
-        }
-        document.querySelectorAll('#toast-messages div[data-message]').forEach(el => showToast(el.dataset.message, el.dataset.category));
-
-        // Color picker sync
-        const colorPicker = document.getElementById('BRAND_COLOR');
-        const colorHex = document.getElementById('BRAND_COLOR_HEX');
-
-        colorPicker.addEventListener('input', () => {
-            colorHex.value = colorPicker.value;
-            checkChanges();
-        });
-
-        colorHex.addEventListener('input', () => {
-            if (/^#[0-9A-Fa-f]{6}$/.test(colorHex.value)) {
-                colorPicker.value = colorHex.value;
-                checkChanges();
-            }
-        });
-
-        // Icon download
-        document.getElementById('download-icon-btn').addEventListener('click', async () => {
-            const urlInput = document.getElementById('BRAND_ICON_URL');
-            const url = urlInput.value.trim();
-
-            if (!url) {
-                showToast('Please enter an icon URL', 'warning');
-                return;
-            }
-
-            const btn = document.getElementById('download-icon-btn');
-            btn.disabled = true;
-            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Downloading...';
-
-            try {
-                const response = await fetch('/api/download_icon', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showToast(data.message, 'success');
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showToast(data.message, 'error');
+                if (!url) {
+                    showToast('Please enter an icon URL', 'warning');
+                    return;
                 }
-            } catch (e) {
-                showToast('Network error: ' + e.message, 'error');
-            }
 
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download Icon';
-        });
-})();
+                const btn = document.getElementById('download-icon-btn');
+                btn.disabled = true;
+                btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Downloading...';
+
+                try {
+                    const response = await fetch('/api/download_icon', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                } catch (e) {
+                    showToast('Network error: ' + e.message, 'error');
+                }
+
+                btn.disabled = false;
+                btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download Icon';
+            });
+
+            // Expose to global scope
+            window.triggerManualBackup = triggerManualBackup;
+        })();
     </script>
     <!-- Regenerate Key Modal -->
     <div id="regen-key-modal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog"
@@ -993,37 +1012,38 @@
     </div>
 
     <script>
-(function() {
-        async function regenerateSecretKey() {
-            const btn = document.querySelector('#regen-key-modal button.bg-red-600');
-            const originalText = btn.textContent;
-            btn.textContent = 'Regenerating...';
-            btn.disabled = true;
+        (function () {
+            async function regenerateSecretKey() {
+                const btn = document.querySelector('#regen-key-modal button.bg-red-600');
+                const originalText = btn.textContent;
+                btn.textContent = 'Regenerating...';
+                btn.disabled = true;
 
-            try {
-                const response = await fetch('/api/regenerate_secret_key', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
+                try {
+                    const response = await fetch('/api/regenerate_secret_key', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        window.location.reload(); // Should redirect to login
+                    } else {
+                        alert('Error: ' + data.message);
+                        btn.textContent = originalText;
+                        btn.disabled = false;
                     }
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    window.location.reload(); // Should redirect to login
-                } else {
-                    alert('Error: ' + data.message);
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred');
                     btn.textContent = originalText;
                     btn.disabled = false;
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('An error occurred');
-                btn.textContent = originalText;
-                btn.disabled = false;
             }
-        }
-})();
+            window.regenerateSecretKey = regenerateSecretKey;
+        })();
     </script>
 </body>
 
