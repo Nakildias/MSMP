@@ -203,70 +203,100 @@ def create_backup():
         # Ensure backup directory exists
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
         
+        # Helper to send broadcast
+        def broadcast(msg):
+            if is_server_running() and server_process and server_process.stdin:
+                try:
+                    server_process.stdin.write(f"say {msg}\n")
+                    server_process.stdin.flush()
+                except Exception: pass
+
         # Generate backup filename: backup-MM-DD-YY-N.tar.gz
         now = datetime.now()
-        date_prefix = now.strftime("%m-%d-%y")
+        date_str = now.strftime("%m-%d-%y")
+        time_str = now.strftime("%H:%M:%S")
         
         # Find next backup number for today
-        existing_backups = list(BACKUPS_DIR.glob(f"backup-{date_prefix}-*.tar.gz"))
+        existing_backups = list(BACKUPS_DIR.glob(f"backup-{date_str}-*.tar.gz"))
         next_num = len(existing_backups) + 1
         
-        backup_name = f"backup-{date_prefix}-{next_num}.tar.gz"
+        backup_name = f"backup-{date_str}-{next_num}.tar.gz"
         backup_path = BACKUPS_DIR / backup_name
         
         print(f"Creating backup: {backup_path}")
+        broadcast(f"[Backup] Server backup started at {time_str}")
         
         # Use system tar for non-blocking compression (offloads CPU work from Python process)
         try:
             # We explicitly exclude Backups dir itself and hidden files
             cmd = ["tar", "-czf", str(backup_path), "--exclude=./Backups", "--exclude=./.*", "."]
             
-            # Using subprocess instead of tarfile python module prevents blocking the EventLoop/GIL
+            # Use subprocess with DEVNULL for stdout to prevent deadlocks
             subprocess.run(
                 cmd,
                 cwd=str(MINECRAFT_SERVER_PATH),
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stdout=subprocess.DEVNULL, # Discard stdout to prevent pipe deadlock
+                stderr=subprocess.PIPE     # Keep stderr for error reporting
             )
+            
+            finish_time = datetime.now().strftime("%H:%M:%S")
+            print(f"Backup created successfully: {backup_name}")
+            broadcast(f"[Backup] Server backup finished at {finish_time}")
+
+            # Clean up old backups if retention limit exceeded
+            # Re-read settings ensure we use latest retention count
+            current_retention = int(manager_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT']))
+            all_backups = sorted(BACKUPS_DIR.glob("backup-*.tar.gz"), key=lambda p: p.stat().st_mtime)
+            while len(all_backups) > current_retention:
+                oldest = all_backups.pop(0)
+                oldest.unlink()
+                print(f"Deleted old backup: {oldest.name}")
+            
+            return True, backup_name
+
         except subprocess.CalledProcessError as e:
-            return False, f"Tar command failed: {e.stderr.decode()}"
-        except FileNotFoundError:
-             print("System 'tar' command not found, falling back to Python tarfile (MAY BLOCK)...")
-             with tarfile.open(backup_path, "w:gz") as tar:
-                for item in MINECRAFT_SERVER_PATH.iterdir():
-                    if item.name != 'Backups' and not item.name.startswith('.'):
-                        tar.add(item, arcname=item.name)
-        
-        print(f"Backup created successfully: {backup_name}")
-        
-        # Clean up old backups if retention limit exceeded
-        retention = int(manager_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT']))
-        all_backups = sorted(BACKUPS_DIR.glob("backup-*.tar.gz"), key=lambda p: p.stat().st_mtime)
-        while len(all_backups) > retention:
-            oldest = all_backups.pop(0)
-            oldest.unlink()
-            print(f"Deleted old backup: {oldest.name}")
-        
-        return True, backup_name
+            err_msg = e.stderr.decode() if e.stderr else "Unknown tar error"
+            print(f"Backup failed: {err_msg}")
+            broadcast(f"[Backup] Backup failed! Check console.")
+            return False, f"Tar command failed: {err_msg}"
+            
     except Exception as e:
         print(f"Backup error: {e}")
         return False, str(e)
 
 def backup_scheduler():
     """Background thread for scheduled backups."""
-    global AUTO_BACKUP_ENABLED, AUTO_BACKUP_INTERVAL_HOURS
+    print("Backup scheduler: Started.")
     while True:
-        if AUTO_BACKUP_ENABLED:
-            interval_seconds = AUTO_BACKUP_INTERVAL_HOURS * 3600
-            time.sleep(interval_seconds)
-            if AUTO_BACKUP_ENABLED:  # Check again after sleep
-                print("Running scheduled backup...")
-                create_backup()
-        else:
-            time.sleep(60)  # Check every minute if backups got enabled
+        # Check every 60 seconds
+        time.sleep(60)
+        
+        # Re-read globals/settings in case they changed
+        enabled = manager_settings.get('AUTO_BACKUP_ENABLED', False)
+        interval_hours = manager_settings.get('AUTO_BACKUP_INTERVAL_HOURS', 6)
+        
+        if enabled:
+            try:
+                # Find the timestamp of the last backup
+                last_backup_time = 0
+                if BACKUPS_DIR.exists():
+                    backups = list(BACKUPS_DIR.glob("backup-*.tar.gz"))
+                    if backups:
+                        newest = max(backups, key=lambda p: p.stat().st_mtime)
+                        last_backup_time = newest.stat().st_mtime
+                
+                # Check if enough time has passed
+                interval_seconds = interval_hours * 3600
+                time_since_last = time.time() - last_backup_time
+                
+                if time_since_last > interval_seconds:
+                    print(f"Backup scheduler: Interval passed ({time_since_last/3600:.1f}h > {interval_hours}h). Starting backup...")
+                    create_backup()
+                    
+            except Exception as e:
+                print(f"Backup scheduler error: {e}")
 
-# --- Function for Server Autostart ---
 # --- Function for Server Autostart ---
 def try_start_server_on_launch():
     """Attempts to start the Minecraft server if not already running."""
