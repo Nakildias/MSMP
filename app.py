@@ -1,3 +1,5 @@
+import eventlet
+eventlet.monkey_patch()
 import os
 import subprocess
 import time
@@ -265,6 +267,7 @@ def backup_scheduler():
             time.sleep(60)  # Check every minute if backups got enabled
 
 # --- Function for Server Autostart ---
+# --- Function for Server Autostart ---
 def try_start_server_on_launch():
     """Attempts to start the Minecraft server if not already running."""
     global server_process
@@ -281,35 +284,48 @@ def try_start_server_on_launch():
     try:
         print(f"Autostart: Attempting server launch with command: {' '.join(command)}")
         print(f"Autostart: Working directory: {MINECRAFT_SERVER_PATH}")
+        
+        # Open error log file
+        error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
+        error_log = open(error_log_path, "w")
+
         # Use os.setsid for process group separation on Unix-like systems
         preexec_fn = os.setsid if os.name != 'nt' else None
+        
+        # FIX: Use DEVNULL for stdout to prevent pipe buffer deadlock
+        # Redirect stderr to file to prevent deadlock but capture startup errors
         server_process = subprocess.Popen(
             command,
             cwd=str(MINECRAFT_SERVER_PATH),
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, # Capture stdout (useful for logs if needed, but primarily for process running)
-            stderr=subprocess.PIPE, # Capture stderr for errors
-            universal_newlines=True, # Decode streams as text
-            encoding='utf-8',      # Specify encoding
-            errors='replace',      # Handle potential encoding errors
-            bufsize=1,             # Line buffered
-            preexec_fn=preexec_fn  # Create new process group (Unix)
+            stdout=subprocess.DEVNULL, # Discard stdout (it goes to latest.log anyway)
+            stderr=error_log,          # Capture stderr to file
+            universal_newlines=True, 
+            encoding='utf-8',      
+            errors='replace',     
+            bufsize=1,             
+            preexec_fn=preexec_fn  
         )
         print(f"Autostart: Server process initiated with PID: {server_process.pid}")
         time.sleep(2) # Give it a moment to potentially fail
+        
         if server_process.poll() is not None:
-             # Try reading stderr if the process died quickly
+             # Process died quickly, read from the error log file
+             error_log.close() # Close to flush and read
              stderr_output = "N/A"
              try:
-                 stderr_output = server_process.stderr.read()
+                 with open(error_log_path, "r") as f:
+                     stderr_output = f.read()
              except Exception:
-                 pass # Ignore errors reading stderr if it's already closed
+                 pass 
              print(f"Autostart Error: Server process terminated quickly after launch.")
              print(f"Autostart Exit Code: {server_process.returncode}")
-             print(f"Autostart Stderr (if available): {stderr_output[:500]}...") # Print first 500 chars
-             server_process = None # Reset process variable as it's dead
+             print(f"Autostart Stderr (from log): {stderr_output[:500]}...") 
+             server_process = None 
         else:
             print("Autostart: Server launch sequence initiated successfully.")
+            # Keep error_log open? No, subprocess has its own handle. We can close our handle.
+            error_log.close()
 
     except FileNotFoundError:
         print(f"Autostart Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
@@ -611,20 +627,24 @@ def _start_server_process():
     try:
         print(f"_start_server_process: Starting server with command: {' '.join(command)}")
         print(f"_start_server_process: Working directory: {MINECRAFT_SERVER_PATH}")
-        # Use os.setsid for process group separation on Unix-like systems
-        # This helps ensure termination kills the whole Java process tree later
+        
+        error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
+        error_log = open(error_log_path, "w")
+
         preexec_fn = os.setsid if os.name != 'nt' else None
+        
+        # FIX: Use DEVNULL for stdout, File for stderr to prevent pipe deadlock
         new_process = subprocess.Popen(
             command,
             cwd=str(MINECRAFT_SERVER_PATH),
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, # Capture stdout (useful for logs if needed, but primarily for process running)
-            stderr=subprocess.PIPE, # Capture stderr for errors
-            universal_newlines=True, # Decode streams as text
-            encoding='utf-8',        # Specify encoding
-            errors='replace',        # Handle potential encoding errors
-            bufsize=1,               # Line buffered
-            preexec_fn=preexec_fn    # Create new process group (Unix)
+            stdout=subprocess.DEVNULL, 
+            stderr=error_log, 
+            universal_newlines=True, 
+            encoding='utf-8',        
+            errors='replace',        
+            bufsize=1,               
+            preexec_fn=preexec_fn    
         )
         print(f"_start_server_process: Server process initiated with PID: {new_process.pid}")
 
@@ -632,17 +652,20 @@ def _start_server_process():
         time.sleep(2)
         if new_process.poll() is not None:
             # Process died quickly
+            error_log.close()
             stderr_output = "N/A"
-            try: stderr_output = new_process.stderr.read() # Read captured error output
-            except Exception: pass # Ignore errors reading stderr if it's already closed
+            try: 
+                 with open(error_log_path, "r") as f:
+                     stderr_output = f.read()
+            except Exception: pass 
 
             print(f"_start_server_process Error: Server process terminated quickly after launch.")
             print(f"_start_server_process Exit Code: {new_process.returncode}")
-            print(f"_start_server_process Stderr (if available): {stderr_output[:500]}...") # Print first 500 chars
-            # No flash here, caller handles UI
+            print(f"_start_server_process Stderr (from log): {stderr_output[:500]}...")
             return False
         else:
             # Launch seems successful, update global state under lock
+            error_log.close() # We don't need the handle anymore, subprocess has it
             with server_management_lock:
                 server_process = new_process
                 user_initiated_stop = False # Reset flag on successful start
@@ -651,12 +674,9 @@ def _start_server_process():
 
     except FileNotFoundError:
         print(f"_start_server_process Error: '{JAVA_EXECUTABLE}' command not found. Is Java installed and in PATH?")
-        # No flash here
         return False
     except Exception as e:
         print(f"_start_server_process Error: Failed to start server process: {e}")
-        # No flash here
-        # Clean up if Popen partially succeeded but threw error later
         if new_process and new_process.poll() is None:
              try: new_process.kill(); new_process.wait(timeout=5)
              except: pass
@@ -944,12 +964,16 @@ def start_server():
             print(f"Background start: Starting server with command: {' '.join(command)}")
             print(f"Background start: Working directory: {MINECRAFT_SERVER_PATH}")
             preexec_fn = os.setsid if os.name != 'nt' else None
+            
+            error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
+            error_log = open(error_log_path, "w")
+
             server_process = subprocess.Popen(
                 command,
                 cwd=str(MINECRAFT_SERVER_PATH),
                 stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=error_log,
                 universal_newlines=True,
                 encoding='utf-8',
                 errors='replace',
@@ -961,10 +985,16 @@ def start_server():
             # Brief pause to catch immediate failures
             time.sleep(1)
             if server_process.poll() is not None:
-                stderr_output = server_process.stderr.read() if server_process.stderr else ""
+                error_log.close()
+                stderr_output = ""
+                try: 
+                    with open(error_log_path, 'r') as f: stderr_output = f.read()
+                except: pass
                 print(f"Background start: Server failed immediately. Exit: {server_process.returncode}")
                 print(f"Background start: Stderr: {stderr_output}")
                 server_process = None
+            else:
+                error_log.close()
         except FileNotFoundError:
             print(f"Background start: '{JAVA_EXECUTABLE}' not found.")
             server_process = None
@@ -1115,12 +1145,16 @@ def restart_server():
         command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
         try:
             preexec_fn = os.setsid if os.name != 'nt' else None
+            error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
+            error_log = open(error_log_path, "w")
+            
             server_process = subprocess.Popen(
                 command, cwd=str(MINECRAFT_SERVER_PATH),
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=error_log,
                 universal_newlines=True, encoding='utf-8', errors='replace',
                 bufsize=1, preexec_fn=preexec_fn
             )
+            error_log.close()
             user_initiated_stop = False
             print(f"Restart: Server started with PID {server_process.pid}")
         except Exception as e:
@@ -1189,10 +1223,13 @@ def monitor_server():
                 continue # Skip the restart logic and go to the next monitor cycle
 
             try:
-                stderr_output = proc_to_check.stderr.read()
-                print(f"Monitor: Stderr from stopped process:\n{stderr_output[:1000]}...") # Log first 1KB
+                # Can't read stderr from pipe anymore as it's redirected to file
+                error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
+                if error_log_path.exists():
+                     with open(error_log_path, 'r') as f:
+                          print(f"Monitor: Stderr (from log):\n{f.read()[-1000:]}...")
             except Exception as e:
-                print(f"Monitor: Could not read stderr from stopped process: {e}")
+                print(f"Monitor: Could not read stderr log: {e}")
 
             time.sleep(RESTART_DELAY_SECONDS) # Wait before restarting
 
@@ -2076,7 +2113,7 @@ if __name__ == '__main__':
     # --- Socket.IO Log Streaming Background Task ---
     def log_stream_task():
         """Background task for streaming log updates via Socket.IO."""
-        global last_log_position, last_log_content
+        global last_log_position
         while True:
             try:
                 if LOG_FILE.is_file():
@@ -2088,10 +2125,17 @@ if __name__ == '__main__':
                     if current_size > last_log_position:
                         with open(LOG_FILE, 'r', encoding='utf-8', errors='ignore') as f:
                             f.seek(last_log_position)
-                            new_content = f.read()
+                            
+                            # Chunked reading to prevent blocking the event loop on huge updates
+                            while True:
+                                chunk = f.read(16384) # Read 16KB chunks
+                                if not chunk:
+                                    break
+                                socketio.emit('log_update', {'data': chunk})
+                                socketio.sleep(0) # Yield to event loop
+                            
                             last_log_position = f.tell()
-                            if new_content.strip():
-                                socketio.emit('log_update', {'data': new_content})
+
             except Exception as e:
                 print(f"Log stream error: {e}")
             socketio.sleep(0.5)  # Check every 500ms
