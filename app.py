@@ -211,6 +211,14 @@ def create_backup():
         # Ensure backup directory exists
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
         
+        # Check if any backup/restore (tar) is currently running
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            try:
+                if proc.info['name'] == 'tar':
+                     return False, "Cannot start backup: Another backup or restore operation is currently in progress (tar process running)."
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        
         # Helper to send broadcast
         def broadcast(msg):
             if is_server_running() and server_process and server_process.stdin:
@@ -224,9 +232,24 @@ def create_backup():
         date_str = now.strftime("%m-%d-%y")
         time_str = now.strftime("%H:%M:%S")
         
-        # Find next backup number for today
+        # Find next backup number for today based on highest existing number
         existing_backups = list(BACKUPS_DIR.glob(f"backup-{date_str}-*.tar.gz"))
-        next_num = len(existing_backups) + 1
+        max_num = 0
+        for backup in existing_backups:
+            try:
+                # name format: backup-MM-DD-YY-N.tar.gz
+                # parts: ['backup', 'MM', 'DD', 'YY', 'N.tar.gz']
+                parts = backup.name.split('-')
+                if len(parts) >= 5:
+                    # Extract N from N.tar.gz
+                    num_part = parts[-1].split('.')[0]
+                    num = int(num_part)
+                    if num > max_num:
+                        max_num = num
+            except (ValueError, IndexError):
+                pass
+        
+        next_num = max_num + 1
         
         backup_name = f"backup-{date_str}-{next_num}.tar.gz"
         backup_path = BACKUPS_DIR / backup_name
@@ -2102,6 +2125,15 @@ def status_api():
 @login_required
 def backup_now():
     """Manually trigger a backup (non-blocking)."""
+    
+    # Check for existing tar process first to give immediate feedback
+    for proc in psutil.process_iter(['name']):
+        try:
+            if proc.info['name'] == 'tar':
+                 return jsonify(success=False, message="Cannot start backup: Another backup or restore is already inside progress."), 409
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+
     def do_backup():
         success, result = create_backup()
         if success:

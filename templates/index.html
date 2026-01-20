@@ -1603,7 +1603,11 @@
                 fetch('/backup_now', { method: 'POST' })
                     .then(r => r.json())
                     .then(data => {
-                        showToast(data.message || 'Backup started', 'success');
+                        if (data.success) {
+                            showToast(data.message || 'Backup started', 'success');
+                        } else {
+                            showToast(data.message, 'warning');
+                        }
                     })
                     .catch(e => showToast('Failed to start backup', 'error'));
             };
