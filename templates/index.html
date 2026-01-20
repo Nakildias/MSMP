@@ -141,241 +141,908 @@
             opacity: 0.8;
             transition: opacity 0.15s ease;
         }
+
+        /* Mobile Drawer (Hamburger Menu) */
+        #mobile-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 280px;
+            max-width: 85vw;
+            background: rgba(17, 24, 39, 0.98);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(75, 85, 99, 0.3);
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 200;
+            overflow-y: auto;
+        }
+
+        #mobile-drawer.open {
+            transform: translateX(0);
+        }
+
+        #mobile-drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 199;
+        }
+
+        #mobile-drawer-backdrop.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Card Panel (Replaces Sidebar) */
+        #card-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            padding: 1rem;
+        }
+
+        #card-panel.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #card-panel-content {
+            width: 100%;
+            max-width: 28rem;
+            max-height: 85vh;
+            background: rgba(17, 24, 39, 0.95);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transform: scale(0.95);
+            transition: transform 0.2s ease;
+        }
+
+        #card-panel.open #card-panel-content {
+            transform: scale(1);
+        }
+
+        /* Modal */
+        .modal {
+            transition: opacity 0.2s ease-in-out;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .modal.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Responsive: Hide desktop nav on mobile */
+        @media (max-width: 767px) {
+            .desktop-nav {
+                display: none !important;
+            }
+
+            .mobile-only {
+                display: flex !important;
+            }
+
+            #main-content {
+                margin-right: 0 !important;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .mobile-only {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 
-<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100">
-    <!-- Toast container -->
-    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans selection:bg-emerald-500/30">
+    <!-- Mobile Drawer Backdrop -->
+    <div id="mobile-drawer-backdrop" onclick="closeMobileDrawer()"></div>
 
-    <!-- Hidden flash messages for JS -->
-    <div id="toast-messages" class="hidden">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div data-category="{{ category }}" data-message="{{ message }}"></div>
-        {% endfor %}
+    <!-- Mobile Drawer -->
+    <div id="mobile-drawer" class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+            <button onclick="closeMobileDrawer()" class="text-gray-400 hover:text-white p-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <nav class="flex flex-col gap-2">
+            <a href="{{ url_for('index') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+            <a href="{{ url_for('files') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+            <a href="{{ url_for('server_properties') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+            <a href="{{ url_for('server_settings') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+        </nav>
+        {% if g.user %}
+        <div class="mt-8 pt-6 border-t border-gray-700/50">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                <span class="text-gray-300 font-medium">@{{ g.user.username }}</span>
+            </div>
+            <a href="{{ url_for('logout') }}"
+                class="flex items-center gap-2 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Logout
+            </a>
+        </div>
         {% endif %}
-        {% endwith %}
     </div>
 
-    <!-- Header -->
-    <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <a href="{{ url_for('index') }}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
-                    {% if has_custom_icon %}
-                    <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
-                        class="w-10 h-10 rounded-xl shadow-lg">
-                    {% else %}
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
-                        style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                        </svg>
-                    </div>
-                    {% endif %}
-                    <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
-                </a>
-            </div>
-            <nav class="flex items-center gap-1">
-                <!-- Navigation Links -->
-                <a href="{{ url_for('index') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
-                <a href="{{ url_for('files') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
-                <a href="{{ url_for('server_properties') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
-                <a href="{{ url_for('server_settings') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
-            </nav>
-            <div class="flex items-center gap-4">
-                {% if g.user %}
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
-                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-                    <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
-                </div>
-                <a href="{{ url_for('logout') }}"
-                    class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
-                    title="Logout">
+    <!-- Card Panel (Players/Plugins) -->
+    <div id="card-panel" onclick="if(event.target === this) closeCardPanel()">
+        <div id="card-panel-content">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-4 border-b border-gray-700/50">
+                <h2 id="card-panel-title" class="text-lg font-bold text-white">Details</h2>
+                <button onclick="closeCardPanel()" class="text-gray-400 hover:text-white transition-colors p-1">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                </a>
-                {% endif %}
+                </button>
+            </div>
+
+            <!-- Tab Navigation (for players) -->
+            <div id="card-panel-nav" class="flex gap-1 p-3 border-b border-gray-700/50 hidden">
+                <button onclick="openCardPanel('players')" id="nav-online"
+                    class="px-3 py-1.5 text-sm rounded-lg transition-colors hover:bg-gray-800 text-gray-400">Online</button>
+                <button onclick="openCardPanel('offline')" id="nav-offline"
+                    class="px-3 py-1.5 text-sm rounded-lg transition-colors hover:bg-gray-800 text-gray-400">Offline</button>
+                <button onclick="openCardPanel('banned')" id="nav-banned"
+                    class="px-3 py-1.5 text-sm rounded-lg transition-colors hover:bg-gray-800 text-gray-400">Banned</button>
+            </div>
+
+            <!-- Search -->
+            <div class="p-3 border-b border-gray-700/50">
+                <input type="text" id="card-panel-search" placeholder="Search..."
+                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-blue-500 transition-colors"
+                    onkeyup="renderCardPanel()">
+            </div>
+
+            <!-- Content -->
+            <div id="card-panel-content-list" class="flex-1 overflow-y-auto p-3 space-y-2 max-h-[50vh]">
+                <!-- Dynamic content -->
             </div>
         </div>
-    </header>
+    </div>
 
-    <!-- Main content -->
-    <main class="pt-24 pb-8 px-4 max-w-6xl mx-auto">
-        <!-- Status Card -->
-        <div class="glass rounded-2xl p-6 mb-6">
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div class="flex items-center gap-4">
-                    <div id="status-indicator"
-                        class="w-4 h-4 rounded-full {{ 'bg-emerald-500 status-running' if status == 'Running' else 'bg-red-500 status-stopped' }}">
+    <!-- Custom Input Modal -->
+    <div id="input-modal"
+        class="modal fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md shadow-2xl p-6 transform transition-all scale-95"
+            id="input-modal-content">
+            <h3 id="input-title" class="text-lg font-bold text-white mb-2">Input Required</h3>
+            <p id="input-desc" class="text-gray-400 text-sm mb-4">Please enter details below.</p>
+
+            <input type="text" id="input-field"
+                class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white outline-none focus:border-emerald-500 mb-4 font-mono"
+                placeholder="...">
+
+            <!-- Secondary Input (e.g. Reason) -->
+            <input type="text" id="input-field-2"
+                class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white outline-none focus:border-emerald-500 mb-4 font-mono hidden"
+                placeholder="Reason...">
+
+            <div class="flex justify-end gap-3">
+                <button onclick="closeInputModal()"
+                    class="px-4 py-2 text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button id="input-confirm"
+                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors font-medium">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugin Management Modal -->
+    <div id="plugin-modal"
+        class="modal fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg shadow-2xl overflow-hidden transform transition-all scale-95"
+            id="plugin-modal-content">
+            <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/50">
+                <h3 class="text-lg font-bold text-white flex items-center gap-3">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    </svg>
+                    <span id="plm-name">Plugin Name</span>
+                </h3>
+                <button onclick="closePluginModal()" class="text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">Version</div>
+                        <div id="plm-version" class="text-gray-300"></div>
                     </div>
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">Status</div>
+                        <div id="plm-status" class="font-bold"></div>
+                    </div>
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50 col-span-2">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">Filename</div>
+                        <div id="plm-filename" class="font-mono text-gray-300 text-xs select-all"></div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-gray-700/50">
+                    <div class="grid grid-cols-2 gap-3" id="plm-actions">
+                        <!-- Generic buttons, visibility controlled by JS -->
+                        <button id="btn-load" onclick="pluginAction('load')"
+                            class="px-3 py-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-600/50 rounded flex items-center justify-center gap-2">Load</button>
+                        <button id="btn-unload" onclick="pluginAction('unload')"
+                            class="px-3 py-2 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-600/50 rounded flex items-center justify-center gap-2">Unload</button>
+                        <button id="btn-reload" onclick="pluginAction('reload')"
+                            class="px-3 py-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-600/50 rounded flex items-center justify-center gap-2">Reload</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Management Modal (Updated ID/Class) -->
+    <div id="player-modal"
+        class="modal fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg shadow-2xl overflow-hidden transform transition-all scale-95"
+            id="player-modal-content">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/50">
+                <h3 class="text-lg font-bold text-white flex items-center gap-3">
+                    <img id="pm-face" src="" alt="Face" class="w-8 h-8 rounded bg-gray-700">
+                    <span id="pm-name">Player Name</span>
+                </h3>
+                <button onclick="closePlayerModal()" class="text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6 space-y-6">
+                <!-- Info Grid -->
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">UUID</div>
+                        <div id="pm-uuid" class="font-mono text-gray-300 truncate text-xs select-all"></div>
+                    </div>
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">IP Address</div>
+                        <div id="pm-ip" class="font-mono text-gray-300 select-all"></div>
+                    </div>
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">Gamemode</div>
+                        <div id="pm-gamemode" class="text-emerald-400 font-medium"></div>
+                    </div>
+                    <div class="p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                        <div class="text-gray-500 text-xs mb-1 uppercase tracking-wider">World</div>
+                        <div id="pm-world" class="text-gray-300"></div>
+                    </div>
+                </div>
+
+                <!-- Status Badges -->
+                <div class="flex flex-wrap gap-2" id="pm-badges">
+                    <!-- Badges injected via JS -->
+                </div>
+
+                <!-- Actions -->
+                <div class="pt-4 border-t border-gray-700/50">
+                    <div class="text-xs text-gray-500 mb-3 uppercase tracking-wider font-semibold">Management Actions
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <button onclick="pmAction('kick')"
+                            class="px-3 py-2 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-600/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            Kick
+                        </button>
+                        <button onclick="pmAction('ban')"
+                            class="px-3 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            Ban
+                        </button>
+                        <button onclick="pmAction('ipban')"
+                            class="px-3 py-2 bg-red-800/20 text-red-500 hover:bg-red-800/30 border border-red-800/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                            </svg>
+                            IP Ban
+                        </button>
+                        <button onclick="pmAction('mute')"
+                            class="px-3 py-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-600/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                                    stroke-dasharray="2 2" />
+                                <line x1="17" y1="14" x2="23" y2="8"></line>
+                            </svg>
+                            Mute
+                        </button>
+                        <button onclick="pmAction('jail')"
+                            class="px-3 py-2 bg-orange-600/20 text-orange-400 hover:bg-orange-600/30 border border-orange-600/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                            </svg>
+                            Jail
+                        </button>
+                        <button onclick="pmAction('freeze')"
+                            class="px-3 py-2 bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30 border border-cyan-600/50 rounded flex items-center justify-center gap-2 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Freeze
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Management Modal -->
+    <div id="backup-modal"
+        class="modal fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl shadow-2xl overflow-hidden transform transition-all scale-95"
+            id="backup-modal-content">
+            <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/50">
+                <h3 class="text-lg font-bold text-white flex items-center gap-3">
+                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                    </svg>
+                    Backup Management
+                </h3>
+                <button onclick="closeBackupModal()" class="text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <!-- Restore Warning Banner -->
+                <div id="restore-warning" class="hidden mb-4 p-4 bg-red-900/30 border border-red-500/50 rounded-lg">
+                    <div class="flex items-center gap-3 text-red-400">
+                        <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                            <div class="font-bold">Restore in Progress</div>
+                            <div class="text-sm text-red-300">Server is stopped. Please wait...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup List -->
+                <div class="space-y-2 max-h-96 overflow-y-auto" id="backup-list">
+                    <div class="text-center text-gray-500 py-8">Loading backups...</div>
+                </div>
+
+                <!-- Create Backup Button -->
+                <div class="mt-4 pt-4 border-t border-gray-700">
+                    <button onclick="createBackupNow()"
+                        class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Create Backup Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Confirmation Modal -->
+    <div id="restore-confirm-modal"
+        class="modal fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-red-500/50 w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-red-500/50 bg-red-900/20">
+                <h3 class="text-lg font-bold text-red-400 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Warning: Restore Backup
+                </h3>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-300 mb-4">Are you sure you want to restore from backup <span
+                        id="restore-backup-name" class="font-mono text-white"></span>?</p>
+                <div class="bg-red-900/20 border border-red-500/30 rounded p-3 mb-4">
+                    <p class="text-red-300 text-sm"><strong>This will:</strong></p>
+                    <ul class="text-red-300 text-sm list-disc list-inside mt-1">
+                        <li>Stop the server immediately</li>
+                        <li>Delete all current server files</li>
+                        <li>Replace them with the backup contents</li>
+                    </ul>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeRestoreConfirm()"
+                        class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors">Cancel</button>
+                    <button onclick="confirmRestore()"
+                        class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium transition-colors">Restore</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-backup-modal"
+        class="modal fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-amber-500/50 w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-amber-500/50 bg-amber-900/20">
+                <h3 class="text-lg font-bold text-amber-400">Delete Backup</h3>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-300 mb-4">Are you sure you want to delete backup <span id="delete-backup-name"
+                        class="font-mono text-white"></span>?</p>
+                <p class="text-gray-500 text-sm mb-4">This action cannot be undone.</p>
+                <div class="flex gap-3">
+                    <button onclick="closeDeleteConfirm()"
+                        class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors">Cancel</button>
+                    <button onclick="confirmDelete()"
+                        class="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="entity-modal"
+        class="modal fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg shadow-2xl overflow-hidden transform transition-all scale-95"
+            id="entity-modal-content">
+            <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/50">
+                <h3 class="text-lg font-bold text-white flex items-center gap-3">
+                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    Loaded Entities
+                </h3>
+                <button onclick="closeEntityModal()" class="text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-0 overflow-y-auto max-h-[60vh] custom-scrollbar" id="entity-list">
+                <!-- Entities injected here -->
+            </div>
+        </div>
+    </div>
+
+    <div id="main-content" class="relative min-h-screen">
+        <!-- Background Gradients -->
+        <!-- Toast container -->
+        <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
+
+        <!-- Hidden flash messages for JS -->
+        <div id="toast-messages" class="hidden">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div data-category="{{ category }}" data-message="{{ message }}"></div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+        </div>
+
+        <!-- Header -->
+        <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-gray-700/50">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="{{ url_for('index') }}"
+                        class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        {% if has_custom_icon %}
+                        <img src="{{ url_for('static', filename='icon.png') }}" alt="{{ brand_name }}"
+                            class="w-10 h-10 rounded-xl shadow-lg">
+                        {% else %}
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                            style="background: linear-gradient(135deg, {{ brand_color }}, {{ brand_color }}dd);">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                            </svg>
+                        </div>
+                        {% endif %}
+                        <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+                    </a>
+                </div>
+                <!-- Mobile Hamburger Button -->
+                <button onclick="openMobileDrawer()"
+                    class="mobile-only p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                    style="display: none;">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
+                <nav class="desktop-nav flex items-center gap-1">
+                    <!-- Navigation Links -->
+                    <a href="{{ url_for('index') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                    <a href="{{ url_for('files') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                    <a href="{{ url_for('server_properties') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                    <a href="{{ url_for('server_settings') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+                </nav>
+                <div class="flex items-center gap-4">
+                    {% if g.user %}
+                    <div
+                        class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                        <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                        <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
+                    </div>
+                    <a href="{{ url_for('logout') }}"
+                        class="text-gray-400 hover:text-red-400 transition-colors p-2 hover:bg-gray-800 rounded-lg"
+                        title="Logout">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        <!-- Main content -->
+        <main class="pt-24 pb-8 px-4 max-w-6xl mx-auto">
+            <!-- Server Control Card -->
+            <div class="glass rounded-2xl p-6 mb-6">
+                <div class="flex flex-col items-center text-center gap-4">
                     <div>
                         <h1 class="text-2xl font-bold">Minecraft Server</h1>
                         <p id="server-status"
                             class="text-sm {{ 'text-emerald-400' if status == 'Running' else 'text-red-400' }}">{{
                             status }}</p>
                     </div>
+
+                    <div class="flex flex-wrap gap-3 justify-center mt-2">
+                        <form action="{{ url_for('restart_server') }}" method="post">
+                            <button type="submit" id="restart-button"
+                                class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105' if status == 'Running' else 'bg-gray-700 text-gray-500 cursor-not-allowed' }}"
+                                {{ 'disabled' if status=='Stopped' }}>
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Restart
+                                </span>
+                            </button>
+                        </form>
+                        <form action="{{ url_for('start_server') }}" method="post">
+                            <button type="submit" id="start-button"
+                                class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Running' else 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105' }}"
+                                {{ 'disabled' if status=='Running' }}>
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Start
+                                </span>
+                            </button>
+                        </form>
+                        <form action="{{ url_for('stop_server') }}" method="post">
+                            <button type="submit" id="stop-button"
+                                class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Stopped' else 'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105' }}"
+                                {{ 'disabled' if status=='Stopped' }}>
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                                    </svg>
+                                    Stop
+                                </span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Card -->
+            <div class="glass rounded-2xl p-6 mb-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- TPS -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                TPS
+                            </span>
+                            <span id="tps-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="tps-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Online Players -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors"
+                        onclick="openSidebar('players')">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                Players
+                            </span>
+                            <span id="players-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="players-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <!-- Plugins -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors"
+                        onclick="openSidebar('plugins')">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                Plugins
+                            </span>
+                            <span id="plugins-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">Click to view list</div>
+                    </div>
+                    <!-- CPU -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                                </svg>
+                                CPU
+                            </span>
+                            <span id="cpu-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="cpu-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- RAM -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                RAM
+                            </span>
+                            <span id="ram-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="ram-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Disk -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                                </svg>
+                                Disk
+                            </span>
+                            <span id="disk-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="disk-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Backups -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors"
+                        onclick="openBackupModal()">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                </svg>
+                                Backups
+                            </span>
+                            <span id="backups-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">Click to manage</div>
+                    </div>
+                    <!-- CPU Temp -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                CPU Temp
+                            </span>
+                            <span id="cpu-temp-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="cpu-temp-bar" class="h-full bg-emerald-500 transition-all duration-300"
+                                style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Disk IO -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                </svg>
+                                Disk IO
+                            </span>
+                            <span id="disk-io-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            <span id="disk-io-read">R: --</span> / <span id="disk-io-write">W: --</span>
+                        </div>
+                    </div>
+                    <!-- Network IO -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                                </svg>
+                                Network
+                            </span>
+                            <span id="net-io-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            <span id="net-io-up">↑ --</span> / <span id="net-io-down">↓ --</span>
+                        </div>
+                    </div>
+                    <!-- Loaded Entities -->
+                    <div onclick="openEntityModal()"
+                        class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                Entities
+                            </span>
+                            <span id="entities-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">Loaded Count</div>
+                    </div>
+                    <!-- Server Uptime -->
+                    <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Uptime
+                            </span>
+                            <span id="uptime-value" class="text-sm font-medium text-gray-200">--</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">Since last start</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console -->
+            <div class="glass rounded-2xl overflow-hidden">
+                <div class="bg-gray-800/50 px-4 py-3 border-b border-gray-700/50 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="flex gap-1.5">
+                            <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+                        </div>
+                        <span class="text-sm text-gray-400 font-medium">Console</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="connection-status" class="text-xs text-gray-500 flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-gray-500" id="ws-indicator"></span>
+                            <span id="ws-text">Connecting...</span>
+                        </span>
+                    </div>
                 </div>
 
-                <div class="flex gap-3">
-                    <form action="{{ url_for('restart_server') }}" method="post">
-                        <button type="submit" id="restart-button"
-                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white hover:scale-105' if status == 'Running' else 'bg-gray-700 text-gray-500 cursor-not-allowed' }}"
+                <div id="console-output"
+                    class="h-[500px] overflow-y-auto p-4 font-mono text-sm text-gray-300 bg-gray-900/50 whitespace-pre-wrap break-words leading-relaxed">
+                    {% for line in logs %}<div class="log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded">{{
+                        line.rstrip() }}</div>{% endfor %}</div>
+
+                <form id="command-form" action="{{ url_for('send_command') }}" method="post"
+                    class="border-t border-gray-700/50">
+                    <div class="flex items-center gap-2 px-4 py-3 bg-gray-800/30">
+                        <span class="text-emerald-400 font-mono font-bold">&gt;</span>
+                        <input type="text" name="command" id="command-input" placeholder="Enter command..."
+                            class="flex-1 bg-transparent border-none outline-none text-gray-100 font-mono placeholder-gray-600"
+                            autocomplete="off" {{ 'disabled' if status=='Stopped' }}>
+                        <button type="submit" id="send-button"
+                            class="px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm {{ 'opacity-50 cursor-not-allowed' if status == 'Stopped' }}"
                             {{ 'disabled' if status=='Stopped' }}>
-                            <span class="flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Restart
-                            </span>
+                            Send
                         </button>
-                    </form>
-                    <form action="{{ url_for('start_server') }}" method="post">
-                        <button type="submit" id="start-button"
-                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Running' else 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white glow-green hover:scale-105' }}"
-                            {{ 'disabled' if status=='Running' }}>
-                            <span class="flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                Start
-                            </span>
-                        </button>
-                    </form>
-                    <form action="{{ url_for('stop_server') }}" method="post">
-                        <button type="submit" id="stop-button"
-                            class="px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 {{ 'bg-gray-700 text-gray-500 cursor-not-allowed' if status == 'Stopped' else 'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white glow-red hover:scale-105' }}"
-                            {{ 'disabled' if status=='Stopped' }}>
-                            <span class="flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                                </svg>
-                                Stop
-                            </span>
-                        </button>
-                    </form>
-                </div>
+                    </div>
+                </form>
             </div>
+        </main>
+    </div> <!-- End Main Content -->
 
-            <!-- System Stats -->
-            <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <!-- CPU -->
-                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm text-gray-400 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                            </svg>
-                            CPU
-                        </span>
-                        <span id="cpu-value" class="text-sm font-medium text-gray-200">--</span>
-                    </div>
-                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div id="cpu-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
-                        </div>
-                    </div>
-                </div>
-                <!-- RAM -->
-                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm text-gray-400 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                            </svg>
-                            RAM
-                        </span>
-                        <span id="ram-value" class="text-sm font-medium text-gray-200">--</span>
-                    </div>
-                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div id="ram-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
-                        </div>
-                    </div>
-                </div>
-                <!-- Disk -->
-                <div class="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm text-gray-400 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                            </svg>
-                            Disk
-                        </span>
-                        <span id="disk-value" class="text-sm font-medium text-gray-200">--</span>
-                    </div>
-                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div id="disk-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Console -->
-        <div class="glass rounded-2xl overflow-hidden">
-            <div class="bg-gray-800/50 px-4 py-3 border-b border-gray-700/50 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="flex gap-1.5">
-                        <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
-                        <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
-                        <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
-                    </div>
-                    <span class="text-sm text-gray-400 font-medium">Console</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span id="connection-status" class="text-xs text-gray-500 flex items-center gap-1">
-                        <span class="w-2 h-2 rounded-full bg-gray-500" id="ws-indicator"></span>
-                        <span id="ws-text">Connecting...</span>
-                    </span>
-                </div>
-            </div>
-
-            <div id="console-output"
-                class="h-[500px] overflow-y-auto p-4 font-mono text-sm text-gray-300 bg-gray-900/50 whitespace-pre-wrap break-words leading-relaxed">
-                {% for line in logs %}<div class="log-line py-0.5 hover:bg-gray-800/30 px-2 -mx-2 rounded">{{
-                    line.rstrip() }}</div>{% endfor %}</div>
-
-            <form id="command-form" action="{{ url_for('send_command') }}" method="post"
-                class="border-t border-gray-700/50">
-                <div class="flex items-center gap-2 px-4 py-3 bg-gray-800/30">
-                    <span class="text-emerald-400 font-mono font-bold">&gt;</span>
-                    <input type="text" name="command" id="command-input" placeholder="Enter command..."
-                        class="flex-1 bg-transparent border-none outline-none text-gray-100 font-mono placeholder-gray-600"
-                        autocomplete="off" {{ 'disabled' if status=='Stopped' }}>
-                    <button type="submit" id="send-button"
-                        class="px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition-colors font-medium text-sm {{ 'opacity-50 cursor-not-allowed' if status == 'Stopped' }}"
-                        {{ 'disabled' if status=='Stopped' }}>
-                        Send
-                    </button>
-                </div>
-            </form>
-        </div>
-    </main>
-
+    <script src="https://unpkg.com/typed.js@2.0.16/dist/typed.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mojs/core"></script>
     <script>
+        // Use an IIFE to encapsulate logic and avoid global namespace pollution
         (function () {
-            // =====================================================
-            // ROBUST CONSOLE WEBSOCKET WITH AUTO-RECONNECTION
-            // =====================================================
-            
             // Configuration
             const CONFIG = {
                 MAX_LOG_LINES: 2000,           // Maximum log lines to keep in DOM
@@ -396,7 +1063,7 @@
 
             // State management - use a unique session ID to track connections
             const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-            
+
             // Clean up any previous socket connection from SPA navigation
             if (window._consoleSocket) {
                 try {
@@ -427,6 +1094,746 @@
             const ramValue = document.getElementById('ram-value');
             const diskBar = document.getElementById('disk-bar');
             const diskValue = document.getElementById('disk-value');
+            const tpsBar = document.getElementById('tps-bar');
+            const tpsValue = document.getElementById('tps-value');
+            const playersBar = document.getElementById('players-bar');
+            const playersValue = document.getElementById('players-value');
+            const pluginsValue = document.getElementById('plugins-value');
+            const backupsValue = document.getElementById('backups-value');
+            const cpuTempBar = document.getElementById('cpu-temp-bar');
+            const cpuTempValue = document.getElementById('cpu-temp-value');
+            const diskIoValue = document.getElementById('disk-io-value');
+            const diskIoRead = document.getElementById('disk-io-read');
+            const diskIoWrite = document.getElementById('disk-io-write');
+            const netIoValue = document.getElementById('net-io-value');
+            const netIoUp = document.getElementById('net-io-up');
+            const netIoDown = document.getElementById('net-io-down');
+            const entitiesValue = document.getElementById('entities-value');
+
+            // Sidebar Elements
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('main-content');
+            const sidebarTitle = document.getElementById('sidebar-title');
+            const sidebarContent = document.getElementById('sidebar-content');
+
+            // Sidebar State & Logic
+            let currentSidebarType = null;
+            let lastMcData = null;
+            let currentModalPlayer = null;
+            let currentModalPlugin = null;
+
+            // --- Modal Helpers ---
+            // Replaces prompt()
+            const inputModal = document.getElementById('input-modal');
+            const inputModalContent = document.getElementById('input-modal-content');
+            const inputTitle = document.getElementById('input-title');
+            const inputDesc = document.getElementById('input-desc');
+            const inputField = document.getElementById('input-field');
+            const inputField2 = document.getElementById('input-field-2');
+            const inputConfirm = document.getElementById('input-confirm');
+
+            let currentInputCallback = null;
+
+            window.promptModal = function (title, desc, placeholder, placeholder2 = null, callback) {
+                inputTitle.textContent = title;
+                inputDesc.textContent = desc;
+                inputField.placeholder = placeholder;
+                inputField.value = '';
+
+                if (placeholder2) {
+                    inputField2.classList.remove('hidden');
+                    inputField2.placeholder = placeholder2;
+                    inputField2.value = '';
+                } else {
+                    inputField2.classList.add('hidden');
+                }
+
+                currentInputCallback = callback;
+
+                inputModal.classList.add('open');
+                inputModalContent.classList.remove('scale-95');
+                inputModalContent.classList.add('scale-100');
+                setTimeout(() => inputField.focus(), 100);
+            };
+
+            window.closeInputModal = function () {
+                inputModal.classList.remove('open');
+                inputModalContent.classList.add('scale-95');
+                inputModalContent.classList.remove('scale-100');
+                currentInputCallback = null;
+            };
+
+            inputConfirm.onclick = function () {
+                if (currentInputCallback) {
+                    const val1 = inputField.value;
+                    const val2 = inputField2.classList.contains('hidden') ? null : inputField2.value;
+                    currentInputCallback(val1, val2);
+                }
+                closeInputModal();
+            };
+
+            // --- Entity Modal Logic ---
+            const entityModal = document.getElementById('entity-modal');
+            const entityModalContent = document.getElementById('entity-modal-content');
+            const entityList = document.getElementById('entity-list');
+
+            window.openEntityModal = function () {
+                renderEntityList();
+                entityModal.classList.add('open');
+                entityModalContent.classList.remove('scale-95');
+                entityModalContent.classList.add('scale-100');
+            };
+
+            window.closeEntityModal = function () {
+                entityModal.classList.remove('open');
+                entityModalContent.classList.add('scale-95');
+                entityModalContent.classList.remove('scale-100');
+            };
+
+            function getMobHeadUrl(type) {
+                // Formatting: SNAKE_CASE to MHF_PascalCase
+                const pascal = type.toLowerCase().replace(/_(\w)/g, (m, c) => c.toUpperCase());
+                const pascalCase = pascal.charAt(0).toUpperCase() + pascal.slice(1);
+                // Simple mapping for common mismatches could go here, but default to MHF pattern
+                return `https://minotar.net/avatar/MHF_${pascalCase}`;
+            }
+
+            function renderEntityList() {
+                if (!lastMcData || !lastMcData.entity_list) {
+                    entityList.innerHTML = '<div class="p-6 text-center text-gray-500">No entity data available</div>';
+                    return;
+                }
+
+                // Sort by count desc
+                const sorted = [...lastMcData.entity_list].sort((a, b) => b.count - a.count);
+
+                let html = '<div class="grid grid-cols-1 divide-y divide-gray-700/50">';
+                sorted.forEach(e => {
+                    const headUrl = getMobHeadUrl(e.type);
+                    html += `
+                        <div class="px-6 py-3 flex items-center justify-between hover:bg-gray-700/30 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <img src="${headUrl}" onerror="this.src='https://minotar.net/avatar/MHF_Question'" 
+                                     class="w-8 h-8 rounded bg-gray-700 object-cover">
+                                <span class="font-medium text-gray-200">${e.type}</span>
+                            </div>
+                            <span class="px-2 py-1 bg-gray-900/50 rounded text-xs font-mono text-emerald-400 font-bold">
+                                ${e.count}
+                            </span>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                entityList.innerHTML = html;
+            }
+
+            // --- Plugin Modal Logic ---
+            const pluginModal = document.getElementById('plugin-modal');
+            const plmName = document.getElementById('plm-name');
+            const plmVersion = document.getElementById('plm-version');
+            const plmStatus = document.getElementById('plm-status');
+            const plmFilename = document.getElementById('plm-filename');
+            const plmActions = document.getElementById('plm-actions');
+
+            window.openPluginModal = function (plugin) {
+                currentModalPlugin = plugin;
+                plmName.textContent = plugin.name;
+                plmVersion.textContent = plugin.version;
+                plmFilename.textContent = plugin.filename || (plugin.name + '.jar'); // Fallback
+
+                const btnLoad = document.getElementById('btn-load');
+                const btnUnload = document.getElementById('btn-unload');
+                const btnReload = document.getElementById('btn-reload');
+
+                if (plugin.status === 'LOADED') {
+                    plmStatus.textContent = 'Enabled';
+                    plmStatus.className = 'text-emerald-400 font-bold';
+                    if (!plugin.enabled) {
+                        plmStatus.textContent = 'Disabled';
+                        plmStatus.className = 'text-red-400 font-bold';
+                    }
+                    btnLoad.classList.add('hidden');
+                    btnUnload.classList.remove('hidden');
+                    btnReload.classList.remove('hidden');
+                } else {
+                    plmStatus.textContent = 'Unloaded';
+                    plmStatus.className = 'text-gray-400 font-bold';
+                    btnLoad.classList.remove('hidden');
+                    btnReload.classList.add('hidden');
+                    btnUnload.classList.add('hidden');
+                }
+
+                pluginModal.classList.add('open');
+                document.getElementById('plugin-modal-content').classList.remove('scale-95');
+                document.getElementById('plugin-modal-content').classList.add('scale-100');
+            };
+
+            window.closePluginModal = function () {
+                pluginModal.classList.remove('open');
+                document.getElementById('plugin-modal-content').classList.add('scale-95');
+                document.getElementById('plugin-modal-content').classList.remove('scale-100');
+                currentModalPlugin = null;
+            };
+
+            window.pluginAction = function (action) {
+                if (!currentModalPlugin) return;
+                let cmd = '';
+                switch (action) {
+                    case 'load':
+                        const filename = currentModalPlugin.filename || '';
+                        const baseName = filename.endsWith('.jar') ? filename.slice(0, -4) : filename;
+                        cmd = `plugman load ${baseName}`;
+                        break;
+                    case 'unload':
+                        cmd = `plugman unload ${currentModalPlugin.name}`;
+                        break;
+                    case 'reload':
+                        cmd = `plugman reload ${currentModalPlugin.name}`;
+                        break;
+                }
+                if (cmd) {
+                    sendCommand(cmd);
+                    closePluginModal();
+                }
+            };
+
+            // --- Player Modal Logic ---
+            const playerModal = document.getElementById('player-modal');
+            const pmFace = document.getElementById('pm-face');
+            const pmName = document.getElementById('pm-name');
+            const pmUuid = document.getElementById('pm-uuid');
+            const pmIp = document.getElementById('pm-ip');
+            const pmGamemode = document.getElementById('pm-gamemode');
+            const pmWorld = document.getElementById('pm-world');
+            const pmBadges = document.getElementById('pm-badges');
+            // Action buttons references for toggling text
+            // We'll update text dynamically in openPlayerModal
+
+            window.openPlayerModal = function (playerData) {
+                currentModalPlayer = playerData;
+
+                pmName.textContent = playerData.name;
+                pmFace.src = `https://minotar.net/avatar/${playerData.name}/64`;
+                pmUuid.textContent = playerData.uuid || 'Unknown';
+                pmIp.textContent = playerData.ip || 'Unknown';
+                pmGamemode.textContent = playerData.gamemode || 'OFFLINE';
+                pmWorld.textContent = playerData.world || 'Unknown';
+
+                // Badges
+                pmBadges.innerHTML = '';
+                const createBadge = (text, colorInfo) => {
+                    const span = document.createElement('span');
+                    span.className = `px-2 py-0.5 rounded text-xs font-bold border ${colorInfo}`;
+                    span.textContent = text;
+                    pmBadges.appendChild(span);
+                };
+
+                if (playerData.is_op) createBadge('OP', 'bg-red-500/10 border-red-500/30 text-red-400');
+                if (playerData.is_god) createBadge('GOD', 'bg-amber-500/10 border-amber-500/30 text-amber-400');
+                if (playerData.is_fly_mode) createBadge('FLY', 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400');
+                if (playerData.is_staff) createBadge('STAFF', 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400');
+                if (playerData.is_flying) createBadge('FLYING', 'bg-sky-500/10 border-sky-500/30 text-sky-400');
+                if (playerData.health && playerData.health < 20) createBadge(`HP: ${playerData.health}`, 'bg-rose-500/10 border-rose-500/30 text-rose-400');
+                if (playerData.gamemode && (playerData.gamemode === 'CREATIVE' || playerData.gamemode === 'SPECTATOR')) createBadge(playerData.gamemode, 'bg-purple-500/10 border-purple-500/30 text-purple-400');
+
+                if (playerData.is_banned) createBadge('BANNED', 'bg-red-600 border-red-400 text-white');
+                if (playerData.is_ip_banned) createBadge('IP BANNED', 'bg-red-800 border-red-500 text-white');
+                if (playerData.is_muted) createBadge('MUTED', 'bg-blue-600 border-blue-400 text-white');
+                if (playerData.is_jailed) createBadge('JAILED', 'bg-orange-600 border-orange-400 text-white');
+
+                // Update Action Buttons State (Toggle Bans/Mutes)
+                const buttons = document.querySelectorAll('#player-modal button[onclick^="pmAction"]');
+                buttons.forEach(btn => {
+                    const action = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+                    let label = action.charAt(0).toUpperCase() + action.slice(1);
+
+                    if (action === 'ban' && playerData.is_banned) label = 'Unban';
+                    if (action === 'ipban') {
+                        label = 'IP Ban';
+                        if (playerData.is_ip_banned) label = 'Un-IPBan';
+                    }
+                    if (action === 'mute' && playerData.is_muted) label = 'Unmute';
+                    if (action === 'jail' && playerData.is_jailed) label = 'Unjail';
+                    if (action === 'freeze' && playerData.is_frozen) label = 'Unfreeze';
+
+                    // Find text node or span to update
+                    btn.lastChild.textContent = ' ' + label; // Hacky but works with SVG structure
+                });
+
+                playerModal.classList.add('open');
+                document.getElementById('player-modal-content').classList.remove('scale-95');
+                document.getElementById('player-modal-content').classList.add('scale-100');
+            };
+
+            window.closePlayerModal = function () {
+                playerModal.classList.remove('open');
+                document.getElementById('player-modal-content').classList.add('scale-95');
+                document.getElementById('player-modal-content').classList.remove('scale-100');
+                currentModalPlayer = null;
+            };
+
+            // Helper to send console command
+            function sendCommand(cmd) {
+                if (!cmd) return;
+                const formData = new FormData();
+                formData.append('command', cmd);
+
+                // Use existing form action or hardcode
+                const action = "{{ url_for('send_command') }}";
+
+                fetch(action, { method: 'POST', body: formData })
+                    .then(r => {
+                        if (r.ok) showToast('Command sent: ' + cmd, 'success');
+                        else showToast('Failed to send command', 'error');
+                    })
+                    .catch(e => showToast('Error sending command', 'error'));
+            }
+
+            window.pmAction = function (action) {
+                if (!currentModalPlayer) return;
+                const name = currentModalPlayer.name;
+                const p = currentModalPlayer;
+
+                // Optimistic toggle helper
+                const toggleState = (prop) => {
+                    p[prop] = !p[prop];
+                    openPlayerModal(p); // Re-render modal to show new state
+                };
+
+                switch (action) {
+                    case 'kick':
+                        promptModal(`Kick ${name}`, 'Enter reasoning:', 'Reason...', null, (reason) => {
+                            if (reason) sendCommand(`kick ${name} ${reason}`);
+                        });
+                        return;
+                    case 'ban':
+                        if (p.is_banned) {
+                            sendCommand(`unban ${name}`);
+                            toggleState('is_banned');
+                        } else {
+                            promptModal(`Ban ${name}`, 'Duration (perm, 1d) and Reason:', 'Duration (e.g. 1d, perm)', 'Reason...', (time, reason) => {
+                                if (!time || !reason) return;
+                                sendCommand(`ban ${name} ${time} ${reason}`);
+                                toggleState('is_banned');
+                            });
+                        }
+                        return;
+                    case 'ipban':
+                        // Use IP if available, otherwise name (name only works if online for /ipban command usually)
+                        const targetStats = (p.ip && p.ip.includes('.')) ? p.ip : name;
+                        if (p.is_ip_banned) {
+                            sendCommand(`unipban ${targetStats}`);
+                            toggleState('is_ip_banned');
+                        } else {
+                            promptModal(`IP Ban ${name}`, 'Duration and Reason:', 'Duration (e.g. 1d, perm)', 'Reason...', (time, reason) => {
+                                if (!time || !reason) return;
+                                sendCommand(`ipban ${targetStats} ${time} ${reason}`);
+                                toggleState('is_ip_banned');
+                            });
+                        }
+                        return;
+                    case 'mute':
+                        if (p.is_muted) {
+                            sendCommand(`unmute ${name}`);
+                            toggleState('is_muted');
+                        } else {
+                            promptModal(`Mute ${name}`, 'Duration (10m) and Reason:', 'Duration (e.g. 10m)', 'Reason...', (time, reason) => {
+                                if (time && reason) {
+                                    sendCommand(`mute ${name} ${time} ${reason}`);
+                                    toggleState('is_muted');
+                                }
+                            });
+                        }
+                        return;
+                    case 'jail':
+                        if (p.is_jailed) {
+                            sendCommand(`unjail ${name}`);
+                            toggleState('is_jailed');
+                        } else {
+                            // Updated Jail: No jail name required, just time + reason
+                            promptModal(`Jail ${name}`, 'Duration and Reason:', 'Duration (e.g. 10m)', 'Reason...', (time, reason) => {
+                                if (time && reason) {
+                                    sendCommand(`jail ${name} ${time} ${reason}`);
+                                    toggleState('is_jailed');
+                                }
+                            });
+                        }
+                        return;
+                    case 'freeze':
+                        if (p.is_frozen) {
+                            sendCommand(`freeze ${name}`); // /freeze toggles, but here we assume it unfreezes if frozen
+                            toggleState('is_frozen');
+                        } else {
+                            sendCommand(`freeze ${name}`); // Toggles on
+                            toggleState('is_frozen');
+                        }
+                        return;
+                }
+            };
+
+
+            // --- Backup Modal Logic ---
+            const backupModal = document.getElementById('backup-modal');
+            const restoreConfirmModal = document.getElementById('restore-confirm-modal');
+            const deleteBackupModal = document.getElementById('delete-backup-modal');
+            let selectedBackupName = null;
+
+            // Extended stats tracking for IO rates
+            let lastDiskRead = null, lastDiskWrite = null;
+            let lastNetSent = null, lastNetRecv = null;
+            let lastStatsTime = Date.now();
+
+            window.openBackupModal = function () {
+                backupModal.classList.add('open');
+                document.getElementById('backup-modal-content').classList.remove('scale-95');
+                document.getElementById('backup-modal-content').classList.add('scale-100');
+                loadBackupList();
+            };
+
+            window.closeBackupModal = function () {
+                backupModal.classList.remove('open');
+                document.getElementById('backup-modal-content').classList.add('scale-95');
+                document.getElementById('backup-modal-content').classList.remove('scale-100');
+            };
+
+            function loadBackupList() {
+                const listEl = document.getElementById('backup-list');
+                listEl.innerHTML = '<div class="text-center text-gray-500 py-8">Loading backups...</div>';
+
+                fetch('/api/backups')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.success) {
+                            listEl.innerHTML = `<div class="text-center text-red-400 py-8">Error: ${data.message}</div>`;
+                            return;
+                        }
+
+                        // Show/hide restore warning
+                        document.getElementById('restore-warning').classList.toggle('hidden', !data.restore_in_progress);
+
+                        if (data.backups.length === 0) {
+                            listEl.innerHTML = '<div class="text-center text-gray-500 py-8">No backups found</div>';
+                            return;
+                        }
+
+                        listEl.innerHTML = data.backups.map(b => `
+                            <div class="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700/50 hover:bg-gray-700/30 transition-colors">
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-mono text-sm text-white truncate">${b.name}</div>
+                                    <div class="text-xs text-gray-500">${b.created_human} • ${b.size_human}</div>
+                                </div>
+                                <div class="flex gap-2 ml-4">
+                                    <button onclick="promptRestore('${b.name}')" 
+                                        class="px-3 py-1.5 text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-600/50 rounded transition-colors"
+                                        ${data.restore_in_progress ? 'disabled' : ''}>Restore</button>
+                                    <button onclick="promptDelete('${b.name}')"
+                                        class="px-3 py-1.5 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/50 rounded transition-colors">Delete</button>
+                                </div>
+                            </div>
+                        `).join('');
+                    })
+                    .catch(e => {
+                        listEl.innerHTML = `<div class="text-center text-red-400 py-8">Failed to load backups</div>`;
+                    });
+            }
+
+            window.promptRestore = function (name) {
+                selectedBackupName = name;
+                document.getElementById('restore-backup-name').textContent = name;
+                restoreConfirmModal.classList.add('open');
+            };
+
+            window.closeRestoreConfirm = function () {
+                restoreConfirmModal.classList.remove('open');
+                selectedBackupName = null;
+            };
+
+            window.confirmRestore = function () {
+                if (!selectedBackupName) return;
+                fetch('/api/backup/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: selectedBackupName })
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            showToast(data.message, 'success');
+                            closeRestoreConfirm();
+                            loadBackupList();
+                        } else {
+                            showToast('Restore failed: ' + data.message, 'error');
+                        }
+                    })
+                    .catch(e => showToast('Error starting restore', 'error'));
+            };
+
+            window.promptDelete = function (name) {
+                selectedBackupName = name;
+                document.getElementById('delete-backup-name').textContent = name;
+                deleteBackupModal.classList.add('open');
+            };
+
+            window.closeDeleteConfirm = function () {
+                deleteBackupModal.classList.remove('open');
+                selectedBackupName = null;
+            };
+
+            window.confirmDelete = function () {
+                if (!selectedBackupName) return;
+                fetch('/api/backup/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: selectedBackupName })
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            showToast(data.message, 'success');
+                            closeDeleteConfirm();
+                            loadBackupList();
+                        } else {
+                            showToast('Delete failed: ' + data.message, 'error');
+                        }
+                    })
+                    .catch(e => showToast('Error deleting backup', 'error'));
+            };
+
+            window.createBackupNow = function () {
+                fetch('/backup_now', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        showToast(data.message || 'Backup started', 'success');
+                    })
+                    .catch(e => showToast('Failed to start backup', 'error'));
+            };
+
+            function formatUptime(seconds) {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = seconds % 60;
+                return `${h}h ${m}m ${s}s`;
+            }
+
+            // Extended stats polling
+            function fetchExtendedStats() {
+                fetch('/api/system_stats_extended')
+                    .then(r => r.json())
+                    .then(data => {
+                        const now = Date.now();
+                        const elapsed = (now - lastStatsTime) / 1000; // seconds
+
+                        // Prevent initial spike or div by zero
+                        if (elapsed < 0.5) return;
+
+                        lastStatsTime = now;
+
+                        // Backup count
+                        if (backupsValue && data.backup_count !== undefined) {
+                            backupsValue.textContent = data.backup_count;
+                        }
+
+                        // Uptime
+                        const uptimeVal = document.getElementById('uptime-value');
+                        if (uptimeVal) {
+                            if (data.uptime_seconds > 0) {
+                                uptimeVal.textContent = formatUptime(data.uptime_seconds);
+                            } else {
+                                uptimeVal.textContent = 'Stopped';
+                            }
+                        }
+
+                        // CPU Temp
+                        if (cpuTempValue && data.cpu_temp !== null && data.cpu_temp !== undefined) {
+                            cpuTempValue.textContent = data.cpu_temp + '°C';
+                            // Color based on temp: green < 60, yellow < 80, red >= 80
+                            const tempPct = Math.min(100, (data.cpu_temp / 100) * 100);
+                            if (cpuTempBar) {
+                                cpuTempBar.style.width = tempPct + '%';
+                                cpuTempBar.className = cpuTempBar.className.replace(/bg-(emerald|amber|red)-500/g, '');
+                                if (data.cpu_temp < 60) cpuTempBar.classList.add('bg-emerald-500');
+                                else if (data.cpu_temp < 80) cpuTempBar.classList.add('bg-amber-500');
+                                else cpuTempBar.classList.add('bg-red-500');
+                            }
+                        } else if (cpuTempValue) {
+                            cpuTempValue.textContent = 'N/A';
+                        }
+
+                        // Disk IO rates
+                        if (data.disk_read_bytes !== undefined) {
+                            if (lastDiskRead !== null) {
+                                const readRate = Math.max(0, (data.disk_read_bytes - lastDiskRead) / elapsed);
+                                const writeRate = Math.max(0, (data.disk_write_bytes - lastDiskWrite) / elapsed);
+
+                                if (diskIoRead) diskIoRead.textContent = 'R: ' + formatSpeed(readRate);
+                                if (diskIoWrite) diskIoWrite.textContent = 'W: ' + formatSpeed(writeRate);
+                                if (diskIoValue) diskIoValue.textContent = formatSpeed(readRate + writeRate);
+                            }
+                            lastDiskRead = data.disk_read_bytes;
+                            lastDiskWrite = data.disk_write_bytes;
+                        }
+
+                        // Network IO rates
+                        if (data.net_bytes_sent !== undefined) {
+                            if (lastNetSent !== null) {
+                                const upRate = Math.max(0, (data.net_bytes_sent - lastNetSent) / elapsed);
+                                const downRate = Math.max(0, (data.net_bytes_recv - lastNetRecv) / elapsed);
+
+                                if (netIoUp) netIoUp.textContent = '↑ ' + formatSpeed(upRate);
+                                if (netIoDown) netIoDown.textContent = '↓ ' + formatSpeed(downRate);
+                                if (netIoValue) netIoValue.textContent = formatSpeed(upRate + downRate);
+                            }
+                            lastNetSent = data.net_bytes_sent;
+                            lastNetRecv = data.net_bytes_recv;
+                        }
+                    })
+                    .catch(e => console.error('Extended stats error:', e));
+            }
+
+            function formatSpeed(bytesPerSec) {
+                if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+                if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+                return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+            }
+
+            // Poll extended stats every 2 seconds
+            setInterval(fetchExtendedStats, 2000);
+            fetchExtendedStats(); // Initial fetch
+
+
+            // --- Mobile Drawer Functions ---
+            window.openMobileDrawer = function () {
+                document.getElementById('mobile-drawer').classList.add('open');
+                document.getElementById('mobile-drawer-backdrop').classList.add('open');
+                document.body.style.overflow = 'hidden';
+            };
+
+            window.closeMobileDrawer = function () {
+                document.getElementById('mobile-drawer').classList.remove('open');
+                document.getElementById('mobile-drawer-backdrop').classList.remove('open');
+                document.body.style.overflow = '';
+            };
+
+            // --- Card Panel Functions (replaces old sidebar) ---
+            window.openCardPanel = function (type) {
+                currentSidebarType = type;
+                const panel = document.getElementById('card-panel');
+                const title = document.getElementById('card-panel-title');
+                const nav = document.getElementById('card-panel-nav');
+
+                panel.classList.add('open');
+
+                // Configure based on type
+                if (type === 'players' || type === 'offline' || type === 'banned') {
+                    title.textContent = 'Players';
+                    nav.classList.remove('hidden');
+                    document.getElementById('nav-online').className = `px-3 py-1.5 text-sm rounded-lg transition-colors ${type === 'players' ? 'bg-emerald-600 text-white' : 'hover:bg-gray-800 text-gray-400'}`;
+                    document.getElementById('nav-offline').className = `px-3 py-1.5 text-sm rounded-lg transition-colors ${type === 'offline' ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-400'}`;
+                    document.getElementById('nav-banned').className = `px-3 py-1.5 text-sm rounded-lg transition-colors ${type === 'banned' ? 'bg-red-600 text-white' : 'hover:bg-gray-800 text-gray-400'}`;
+                } else if (type === 'plugins') {
+                    title.textContent = 'Installed Plugins';
+                    nav.classList.add('hidden');
+                }
+
+                renderCardPanel();
+            };
+
+            window.closeCardPanel = function () {
+                currentSidebarType = null;
+                document.getElementById('card-panel').classList.remove('open');
+            };
+
+            // Alias for backwards compat with existing onclick handlers
+            window.openSidebar = window.openCardPanel;
+            window.closeSidebar = window.closeCardPanel;
+
+            function renderCardPanel() {
+                const contentList = document.getElementById('card-panel-content-list');
+                if (!currentSidebarType || !lastMcData || !contentList) return;
+
+                contentList.innerHTML = '';
+
+                // Get search query
+                const searchInput = document.getElementById('card-panel-search');
+                const query = searchInput ? searchInput.value.toLowerCase() : '';
+
+                // Generic Player Renderer
+                const renderPlayerRow = (p) => {
+                    const div = document.createElement('div');
+                    div.className = 'p-3 rounded bg-gray-800/50 border border-gray-700/50 flex items-center gap-3 cursor-pointer hover:bg-gray-700/50 transition-colors group';
+                    div.onclick = () => openPlayerModal(p);
+                    const faceUrl = `https://minotar.net/avatar/${p.name}/32`;
+
+                    div.innerHTML = `
+                         <img src="${faceUrl}" alt="${p.name}" class="w-8 h-8 rounded bg-gray-700 group-hover:scale-110 transition-transform">
+                         <div class="flex-1">
+                             <div class="text-gray-200 font-medium leading-tight">${p.name}</div>
+                             <div class="text-[10px] text-gray-500 font-mono">${p.uuid ? p.uuid.substr(0, 8) + '...' : ''}</div>
+                         </div>
+                         ${(p.is_banned) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold border border-red-500/30">BAN</span>' : ''}
+                         ${(p.is_op) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 font-bold border border-purple-500/30">OP</span>' : ''}
+                         ${(p.is_god) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">GOD</span>' : ''}
+                         ${(p.is_fly_mode) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-bold border border-cyan-500/30">FLY</span>' : ''}
+                         ${(p.is_staff) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">STAFF</span>' : ''}
+                     `;
+                    contentList.appendChild(div);
+                };
+
+                // Filter Helper
+                const filterItems = (items) => {
+                    if (!query) return items;
+                    return items.filter(i => {
+                        const name = i.name ? i.name.toLowerCase() : '';
+                        const uuid = i.uuid ? i.uuid.toLowerCase() : '';
+                        return name.includes(query) || uuid.includes(query);
+                    });
+                }
+
+                if (currentSidebarType === 'players') {
+                    const players = filterItems(lastMcData.player_list || []);
+                    if (players.length === 0) contentList.innerHTML = '<div class="text-gray-500 italic p-4">No players online.</div>';
+                    else players.forEach(p => renderPlayerRow(p));
+
+                } else if (currentSidebarType === 'offline') {
+                    const players = filterItems(lastMcData.offline_players || []);
+                    if (players.length === 0) contentList.innerHTML = '<div class="text-gray-500 italic p-4">No offline data.</div>';
+                    else players.forEach(p => renderPlayerRow(p));
+
+                } else if (currentSidebarType === 'banned') {
+                    const players = filterItems(lastMcData.banned_players || []);
+                    if (players.length === 0) contentList.innerHTML = '<div class="text-gray-500 italic p-4">No banned players.</div>';
+                    else players.forEach(p => renderPlayerRow(p));
+
+                } else if (currentSidebarType === 'plugins') {
+                    const plugins = filterItems(lastMcData.plugins_list || []);
+                    if (plugins.length === 0) {
+                        contentList.innerHTML = '<div class="text-gray-500 italic p-4">No plugins data.</div>';
+                    } else {
+                        plugins.forEach(p => {
+                            const div = document.createElement('div');
+                            div.className = 'p-3 rounded bg-gray-800/50 border border-gray-700/50 flex items-center justify-between cursor-pointer hover:bg-gray-700/50 transition-colors';
+
+                            div.onclick = () => openPluginModal(p);
+
+                            let statusColor = 'bg-gray-500';
+                            let glow = '';
+                            if (p.status === 'LOADED') {
+                                statusColor = p.enabled ? 'bg-emerald-500' : 'bg-red-500';
+                                glow = p.enabled ? 'shadow-[0_0_8px_rgba(16,185,129,0.4)]' : '';
+                            }
+
+                            div.innerHTML = `
+                                <div>
+                                    <div class="text-gray-200 font-medium ${p.status === 'UNLOADED' ? 'text-gray-500' : ''}">${p.name}</div>
+                                    <div class="text-xs text-gray-500">v${p.version}</div>
+                                </div>
+                                <div class="w-2.5 h-2.5 rounded-full ${statusColor} ${glow}"></div>
+                            `;
+                            contentList.appendChild(div);
+                        });
+                    }
+                }
+            }
 
             // Verify critical elements exist
             if (!consoleOutput || !wsIndicator || !wsText) {
@@ -498,11 +1905,11 @@
             // Append log lines with DOM management
             function appendLog(text) {
                 if (isDestroyed || !consoleOutput) return;
-                
+
                 const isNearBottom = consoleOutput.scrollHeight - consoleOutput.scrollTop - consoleOutput.clientHeight < 100;
                 const lines = text.split('\n');
                 const fragment = document.createDocumentFragment();
-                
+
                 lines.forEach(line => {
                     if (line.trim()) {
                         const div = document.createElement('div');
@@ -511,9 +1918,9 @@
                         fragment.appendChild(div);
                     }
                 });
-                
+
                 consoleOutput.appendChild(fragment);
-                
+
                 // Prune if needed (debounced via RAF)
                 requestAnimationFrame(pruneLogLines);
 
@@ -538,7 +1945,7 @@
                 if (isDestroyed) return;
                 console.log('Socket disconnected:', reason);
                 updateConnectionStatus('Disconnected', 'red');
-                
+
                 // If server initiated disconnect, attempt reconnect
                 if (reason === 'io server disconnect') {
                     socket.connect();
@@ -570,9 +1977,9 @@
             // Heartbeat - detect stale connections
             function checkConnectionHealth() {
                 if (isDestroyed) return;
-                
+
                 const timeSinceData = Date.now() - lastDataReceived;
-                
+
                 // If connected but no data for too long, connection might be stale
                 if (socket.connected && timeSinceData > CONFIG.STALE_CONNECTION_TIMEOUT) {
                     console.log('Connection appears stale, forcing reconnect...');
@@ -585,21 +1992,22 @@
             }
 
             // Status polling
+            let wasRestoring = false;
             function updateStatus() {
                 if (isDestroyed || !statusElement) return;
-                
+
                 fetch("{{ url_for('status_api') }}")
                     .then(r => r.json())
                     .then(data => {
                         if (isDestroyed) return;
-                        
+
                         const isRunning = data.status === 'Running';
                         const currentStatus = statusElement.textContent;
 
                         if (currentStatus !== data.status) {
                             statusElement.textContent = data.status;
                             statusElement.className = isRunning ? 'text-sm text-emerald-400' : 'text-sm text-red-400';
-                            
+
                             if (statusIndicator) {
                                 statusIndicator.className = isRunning
                                     ? 'w-4 h-4 rounded-full bg-emerald-500 status-running'
@@ -630,6 +2038,29 @@
                                 if (sendButton) sendButton.className = 'px-4 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 transition-colors font-medium text-sm opacity-50 cursor-not-allowed';
                             }
                         }
+
+                        // Restore Status Logic
+                        if (data.restore_in_progress !== undefined) {
+                            // Update modal if open
+                            const warning = document.getElementById('restore-warning');
+                            if (warning) {
+                                warning.classList.toggle('hidden', !data.restore_in_progress);
+                                if (data.restore_in_progress && data.restore_status) {
+                                    // Optionally update text if we had a specific element for it
+                                    // For now, let's just append status to the warning title if possible
+                                    const warningTitle = warning.querySelector('.font-bold');
+                                    if (warningTitle) warningTitle.textContent = "Restore in Progress: " + data.restore_status;
+                                }
+                            }
+
+                            // Completion Toast
+                            if (wasRestoring && !data.restore_in_progress) {
+                                showToast('Backup restoration completed!', 'success');
+                                // Refresh list if modal is open
+                                if (backupModal.classList.contains('open')) loadBackupList();
+                            }
+                            wasRestoring = data.restore_in_progress;
+                        }
                     })
                     .catch(err => {
                         if (!isDestroyed) console.error('Status poll error:', err);
@@ -641,7 +2072,7 @@
                 commandForm.addEventListener('submit', function (e) {
                     e.preventDefault();
                     if (isDestroyed) return;
-                    
+
                     if (statusElement && statusElement.textContent !== 'Running') {
                         showToast('Server is not running', 'error');
                         return;
@@ -661,10 +2092,10 @@
             // Toast system
             function showToast(message, type = 'info') {
                 if (isDestroyed) return;
-                
+
                 const container = document.getElementById('toast-container');
                 if (!container) return;
-                
+
                 const toast = document.createElement('div');
 
                 const colors = {
@@ -708,7 +2139,7 @@
 
             function updateSystemStats() {
                 if (isDestroyed) return;
-                
+
                 fetch('{{ url_for("system_stats") }}')
                     .then(r => r.json())
                     .then(data => {
@@ -739,12 +2170,65 @@
                         if (!isDestroyed) console.error('Stats poll error:', err);
                     });
             }
+            function updateMinecraftStats() {
+                if (isDestroyed) return;
+
+                fetch('/api/mc_stats')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (isDestroyed || data.error || data.status === 'offline') return;
+
+                        // TPS (Max 20)
+                        if (tpsBar && tpsValue) {
+                            const tps = data.tps || 0;
+                            const tpsPercent = Math.min((tps / 20) * 100, 100);
+                            tpsBar.style.width = tpsPercent + '%';
+                            tpsBar.className = 'h-full transition-all duration-300 ' + getBarColor(100 - tpsPercent); // Inverse logic for color (high TPS is good)
+                            // Clean up color logic: getBarColor expects high % = bad (red). 
+                            // For TPS, 20 is good (100%). So we pass (100 - percentage) to get green for high values.
+                            tpsValue.textContent = tps.toFixed(1);
+                        }
+
+                        // Players
+                        if (playersBar && playersValue) {
+                            const online = data.players_online || 0;
+                            const max = data.players_max || 1;
+                            const percent = (online / max) * 100;
+                            playersBar.style.width = percent + '%';
+                            playersBar.className = 'h-full transition-all duration-300 bg-emerald-500'; // Always green for players
+                            playersValue.textContent = `${online} / ${max}`;
+                        }
+
+                        // Plugins
+                        if (pluginsValue) {
+                            const count = data.plugins_count || 0;
+                            pluginsValue.textContent = count;
+                        }
+
+                        // Entities
+                        if (entitiesValue) {
+                            const count = data.entities || 0;
+                            entitiesValue.textContent = count;
+                        }
+
+                        // Update cache and re-render sidebar if open
+                        lastMcData = data;
+                        if (currentSidebarType) {
+                            renderSidebar();
+                        }
+                    })
+                    .catch(err => {
+                        if (!isDestroyed) console.error('MC Stats poll error:', err);
+                    });
+            }
 
             // Start intervals
             updateStatus();
             updateSystemStats();
-            
+            updateMinecraftStats();
+
             safeSetInterval(updateSystemStats, CONFIG.STATS_POLL_INTERVAL);
+            safeSetInterval(updateMinecraftStats, CONFIG.STATS_POLL_INTERVAL);
             safeSetInterval(updateStatus, CONFIG.STATUS_POLL_INTERVAL);
             safeSetInterval(checkConnectionHealth, CONFIG.HEARTBEAT_INTERVAL);
 
@@ -752,22 +2236,22 @@
             function cleanup() {
                 console.log('Cleaning up console connections...');
                 isDestroyed = true;
-                
+
                 // Clear all intervals and timeouts
                 intervals.forEach(id => clearInterval(id));
                 timeouts.forEach(id => clearTimeout(id));
                 intervals = [];
                 timeouts = [];
-                
+
                 // Disconnect socket
                 if (socket) {
                     socket.disconnect();
                 }
-                
+
                 window._consoleSocket = null;
                 window._consoleCleanup = null;
             }
-            
+
             window._consoleCleanup = cleanup;
 
             // Cleanup on Turbo navigation

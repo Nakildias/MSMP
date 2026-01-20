@@ -174,7 +174,15 @@ AUTO_BACKUP_INTERVAL_HOURS = manager_settings.get('AUTO_BACKUP_INTERVAL_HOURS', 
 BACKUP_RETENTION_COUNT = manager_settings.get('BACKUP_RETENTION_COUNT', DEFAULT_SETTINGS['BACKUP_RETENTION_COUNT'])
 LOG_FILE = MINECRAFT_SERVER_PATH / "logs" / "latest.log"
 DATABASE = Path(__file__).parent / 'users.db'
-BACKUPS_DIR = MINECRAFT_SERVER_PATH / 'Backups'
+BACKUPS_DIR = Path(__file__).parent / 'backups'
+
+# --- Restore Lock ---
+restore_in_progress = False
+restore_status = None
+restore_lock = threading.Lock()
+
+# --- Uptime Tracking ---
+server_start_time = None
 
 # --- Database Functions --- Added Section
 def get_db():
@@ -267,10 +275,15 @@ def create_backup():
 
 def backup_scheduler():
     """Background thread for scheduled backups."""
+    global restore_in_progress
     print("Backup scheduler: Started.")
     while True:
         # Check every 60 seconds
         time.sleep(60)
+        
+        # Skip if restore is in progress
+        if restore_in_progress:
+            continue
         
         # Re-read globals/settings in case they changed
         enabled = manager_settings.get('AUTO_BACKUP_ENABLED', False)
@@ -761,6 +774,32 @@ def save_properties(file_path, settings_dict):
          print(f"Error writing properties file {file_path}: {e}")
          raise IOError(f"Error writing properties file: {e}") # Re-raise to be caught by route
 
+# --- Stats API Route ---
+@app.route('/api/mc_stats')
+@login_required # Optional: protect stats or make public? keeping protected for now
+def mc_stats_api():
+    """Returns server stats from the ustats plugin."""
+    stats_file = MINECRAFT_SERVER_PATH / "plugins" / "UltimateStats" / "stats.json"
+    
+    if not stats_file.exists():
+        # Fallback if plugin isn't running or hasn't generated stats yet
+        return jsonify({
+            "status": "offline",
+            "error": "Stats file not found",
+            "tps": 0,
+            "ram_percent": 0,
+            "players_online": 0,
+            "players_max": 0
+        })
+
+    try:
+        with open(stats_file, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        print(f"Error reading stats file: {e}")
+        return jsonify({"status": "error", "error": str(e)})
+
 # --- Server Control Routes --- (Apply @login_required)
 @app.route('/server_settings', methods=['GET', 'POST'])
 @login_required
@@ -974,7 +1013,12 @@ def index():
 @login_required
 def start_server():
     """Initiates a server start in the background (non-blocking)."""
-    global server_process
+    global server_process, restore_in_progress
+
+    # Block start during restore
+    if restore_in_progress:
+        flash("Cannot start server: A backup restore is in progress.", "error")
+        return redirect(url_for('index'))
 
     if is_server_running():
         flash("Server is already running.", "warning")
@@ -988,10 +1032,11 @@ def start_server():
     flash("Server starting...", "info")
 
     def do_start():
-        global server_process
+        global server_process, server_start_time
         command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
         try:
             print(f"Background start: Starting server with command: {' '.join(command)}")
+            server_start_time = time.time()
             print(f"Background start: Working directory: {MINECRAFT_SERVER_PATH}")
             preexec_fn = os.setsid if os.name != 'nt' else None
             
@@ -2041,11 +2086,15 @@ def regenerate_secret_key():
 
 # --- API Routes --- (Apply @login_required)
 
-@app.route('/status_api')
+@app.route('/api/status')
 @login_required
 def status_api():
     """API endpoint to get server status."""
-    return jsonify(status="Running" if is_server_running() else "Stopped")
+    return jsonify(
+        status="Running" if is_server_running() else "Stopped",
+        restore_in_progress=restore_in_progress,
+        restore_status=restore_status
+    )
 
 @app.route('/backup_now', methods=['POST'])
 @login_required
@@ -2066,6 +2115,229 @@ def backup_now():
 def logs_api():
     """API endpoint to get latest logs."""
     return jsonify(logs=get_latest_logs())
+
+
+@app.route('/api/backups')
+@login_required
+def api_list_backups():
+    """API endpoint to list all backups with metadata."""
+    global restore_in_progress, restore_status
+    try:
+        backups = []
+        if BACKUPS_DIR.exists():
+            for backup_file in sorted(BACKUPS_DIR.glob("backup-*.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True):
+                stat = backup_file.stat()
+                backups.append({
+                    'name': backup_file.name,
+                    'size': stat.st_size,
+                    'size_human': format_size(stat.st_size),
+                    'created': stat.st_mtime,
+                    'created_human': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                })
+        
+        # Check if restore is actually still running if currently marked as in progress
+        # We only really trust the process list if we think we are in the extraction phase (which shell executes)
+        if restore_in_progress and restore_status == "Extracting backup...":
+            tar_found = False
+            try:
+                for proc in psutil.process_iter(['name', 'cmdline']):
+                    try:
+                        if proc.info['name'] == 'tar' and 'xzf' in (proc.info.get('cmdline') or []):
+                            tar_found = True
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        pass
+            except Exception:
+                pass 
+                
+            if not tar_found:
+                 # Force completion if tar is gone
+                 restore_in_progress = False
+                 restore_status = None
+                 
+        return jsonify(success=True, backups=backups, count=len(backups), restore_in_progress=restore_in_progress, restore_status=restore_status)
+    except Exception as e:
+        return jsonify(success=False, message=str(e)), 500
+
+
+def format_size(size_bytes):
+    """Format bytes to human readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
+
+
+@app.route('/api/backup/restore', methods=['POST'])
+@login_required
+def api_restore_backup():
+    """API endpoint to restore from a backup."""
+    global restore_in_progress, server_process
+    
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify(success=False, message="No backup name provided"), 400
+    
+    backup_name = data['name']
+    backup_path = BACKUPS_DIR / backup_name
+    
+    if not backup_path.exists() or not backup_path.is_file():
+        return jsonify(success=False, message="Backup file not found"), 404
+    
+    # Check if already restoring
+    with restore_lock:
+        if restore_in_progress:
+            return jsonify(success=False, message="A restore is already in progress"), 409
+        restore_in_progress = True
+    
+    def do_restore():
+        global restore_in_progress, server_process, restore_status
+        try:
+            # Stop server if running
+            # Stop server if running
+            if is_server_running():
+                restore_status = "Stopping server..."
+                print(f"Restore: Stopping server before restore...")
+                try:
+                    if server_process and server_process.stdin:
+                        server_process.stdin.write("stop\n")
+                        server_process.stdin.flush()
+                        server_process.wait(timeout=30)
+                except Exception as e:
+                    print(f"Restore: Error stopping server gracefully: {e}")
+                    if server_process:
+                        server_process.kill()
+                        server_process.wait(timeout=10)
+                server_process = None
+            
+            # Wait a moment for files to be released
+            time.sleep(2)
+            
+            print(f"Restore: Starting restore from {backup_name}...")
+            
+            restore_status = "Cleaning files..."
+            
+            # Clear server directory (except critical files we might want to keep)
+            for item in MINECRAFT_SERVER_PATH.iterdir():
+                item_name = item.name
+                # Skip certain files/folders if desired
+                if item_name.startswith('.'):
+                    continue
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    print(f"Restore: Warning - Could not delete {item_name}: {e}")
+            
+            # Extract backup
+            restore_status = "Extracting backup..."
+            cmd = ["tar", "-xzf", str(backup_path), "-C", str(MINECRAFT_SERVER_PATH)]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            
+            print(f"Restore: Successfully restored from {backup_name}")
+            
+        except Exception as e:
+            print(f"Restore: Error during restore: {e}")
+        finally:
+            with restore_lock:
+                restore_in_progress = False
+                restore_status = None
+    
+    threading.Thread(target=do_restore, daemon=True).start()
+    return jsonify(success=True, message=f"Restore from '{backup_name}' started. Server will be stopped during restore.")
+
+
+@app.route('/api/backup/delete', methods=['POST'])
+@login_required
+def api_delete_backup():
+    """API endpoint to delete a backup."""
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify(success=False, message="No backup name provided"), 400
+    
+    backup_name = data['name']
+    backup_path = BACKUPS_DIR / backup_name
+    
+    # Validate it's a backup file
+    if not backup_name.startswith('backup-') or not backup_name.endswith('.tar.gz'):
+        return jsonify(success=False, message="Invalid backup name"), 400
+    
+    if not backup_path.exists():
+        return jsonify(success=False, message="Backup not found"), 404
+    
+    try:
+        backup_path.unlink()
+        return jsonify(success=True, message=f"Backup '{backup_name}' deleted")
+    except Exception as e:
+        return jsonify(success=False, message=str(e)), 500
+
+
+@app.route('/api/system_stats_extended')
+@login_required
+def system_stats_extended():
+    """API endpoint for extended system stats including CPU temp, disk IO, network IO."""
+    try:
+        stats = {}
+        
+        # CPU Temperature
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                # Try common sensor names
+                for name in ['coretemp', 'k10temp', 'acpitz', 'cpu_thermal']:
+                    if name in temps:
+                        stats['cpu_temp'] = round(temps[name][0].current, 1)
+                        break
+                else:
+                    # Fallback: use first available sensor
+                    first_sensor = list(temps.values())[0]
+                    if first_sensor:
+                        stats['cpu_temp'] = round(first_sensor[0].current, 1)
+        except Exception:
+            stats['cpu_temp'] = None
+        
+        # Disk IO
+        try:
+            disk_io = psutil.disk_io_counters()
+            if disk_io:
+                stats['disk_read_bytes'] = disk_io.read_bytes
+                stats['disk_write_bytes'] = disk_io.write_bytes
+        except Exception:
+            pass
+        
+        # Network IO
+        try:
+            net_io = psutil.net_io_counters()
+            if net_io:
+                stats['net_bytes_sent'] = net_io.bytes_sent
+                stats['net_bytes_recv'] = net_io.bytes_recv
+        except Exception:
+            pass
+        
+        # Backup count
+        try:
+            if BACKUPS_DIR.exists():
+                stats['backup_count'] = len(list(BACKUPS_DIR.glob("backup-*.tar.gz")))
+            else:
+                stats['backup_count'] = 0
+        except Exception:
+            stats['backup_count'] = 0
+        
+        # Restore status
+        stats['restore_in_progress'] = restore_in_progress
+        
+        # Uptime
+        if server_start_time and is_server_running():
+            stats['uptime_seconds'] = int(time.time() - server_start_time)
+        else:
+            stats['uptime_seconds'] = 0
+            
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # --- Cleanup on Exit ---

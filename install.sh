@@ -25,6 +25,7 @@ PYTHON_DEPS=(
     "Flask"
     "flask-socketio"
     "eventlet"
+    "psutil"
 )
 MAIN_EXECUTABLE_NAME="msmp"
 LINK_NAMES=( "msmp" )

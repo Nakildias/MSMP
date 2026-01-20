@@ -139,10 +139,102 @@
             opacity: 0.8;
             transition: opacity 0.15s ease;
         }
+
+        /* Mobile Drawer */
+        #mobile-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 280px;
+            max-width: 85vw;
+            background: rgba(17, 24, 39, 0.98);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(75, 85, 99, 0.3);
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 200;
+            overflow-y: auto;
+        }
+
+        #mobile-drawer.open {
+            transform: translateX(0);
+        }
+
+        #mobile-drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 199;
+        }
+
+        #mobile-drawer-backdrop.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        @media (max-width: 767px) {
+            .desktop-nav {
+                display: none !important;
+            }
+
+            .mobile-only {
+                display: flex !important;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .mobile-only {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 
 <body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 min-h-screen text-gray-100">
+    <!-- Mobile Drawer Backdrop -->
+    <div id="mobile-drawer-backdrop" onclick="closeMobileDrawer()"></div>
+    <!-- Mobile Drawer -->
+    <div id="mobile-drawer" class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
+            <button onclick="closeMobileDrawer()" class="text-gray-400 hover:text-white p-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <nav class="flex flex-col gap-2">
+            <a href="{{ url_for('index') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Console</a>
+            <a href="{{ url_for('files') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all bg-gray-800 text-white">Files</a>
+            <a href="{{ url_for('server_properties') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Properties</a>
+            <a href="{{ url_for('server_settings') }}"
+                class="px-4 py-3 rounded-lg text-base font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Settings</a>
+        </nav>
+        {% if g.user %}
+        <div class="mt-8 pt-6 border-t border-gray-700/50">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                <span class="text-gray-300 font-medium">@{{ g.user.username }}</span>
+            </div>
+            <a href="{{ url_for('logout') }}"
+                class="flex items-center gap-2 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Logout
+            </a>
+        </div>
+        {% endif %}
+    </div>
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-80"></div>
     <div id="toast-messages" class="hidden">
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -321,20 +413,28 @@
                     <span class="text-xl font-bold" style="color: {{ brand_color }}">{{ brand_name }}</span>
                 </a>
             </div>
-            <nav class="flex items-center gap-1">
-                <!-- Navigation Links -->
+            <!-- Mobile Hamburger Button -->
+            <button onclick="openMobileDrawer()"
+                class="mobile-only p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                style="display: none;">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+            <nav class="desktop-nav flex items-center gap-1">
                 <a href="{{ url_for('index') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'index' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Console</a>
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Console</a>
                 <a href="{{ url_for('files') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint.startswith('view_file') or request.endpoint == 'files' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Files</a>
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all bg-gray-800 text-white">Files</a>
                 <a href="{{ url_for('server_properties') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_properties' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Properties</a>
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Properties</a>
                 <a href="{{ url_for('server_settings') }}"
-                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all {{ 'bg-gray-800 text-white' if request.endpoint == 'server_settings' else 'text-gray-400 hover:text-white hover:bg-gray-800/50' }}">Settings</a>
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white hover:bg-gray-800/50">Settings</a>
             </nav>
             <div class="flex items-center gap-4">
                 {% if g.user %}
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                <div
+                    class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
                     <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
                     <span class="text-xs font-medium text-gray-300">@{{ g.user.username }}</span>
                 </div>
@@ -605,6 +705,18 @@
     </main>
 
     <script>
+        // Mobile drawer functions
+        function openMobileDrawer() {
+            document.getElementById('mobile-drawer').classList.add('open');
+            document.getElementById('mobile-drawer-backdrop').classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeMobileDrawer() {
+            document.getElementById('mobile-drawer').classList.remove('open');
+            document.getElementById('mobile-drawer-backdrop').classList.remove('open');
+            document.body.style.overflow = '';
+        }
+
         (function () {
             // === Upload Drag and Drop ===
             const dropZone = document.getElementById('drop-zone');
