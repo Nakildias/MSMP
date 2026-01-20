@@ -1716,7 +1716,9 @@ def upload_file():
     for i, file in enumerate(uploaded_files):
         if not file or file.filename == '': continue
         
-        filename = secure_filename(file.filename)
+        # Use os.path.basename to ensure we don't include directory parts in the filename
+        # This fixes issues where browsers send full paths (e.g. plugins/jar.jar) and secure_filename mangles it
+        filename = secure_filename(os.path.basename(file.filename))
         if not allowed_file(filename):
             error_count += 1
             continue
