@@ -336,7 +336,7 @@ def backup_scheduler():
 # --- Function for Server Autostart ---
 def try_start_server_on_launch():
     """Attempts to start the Minecraft server if not already running."""
-    global server_process
+    global server_process, server_start_time
     if is_server_running():
         print("Autostart Skipped: Server process appears to be running already.")
         return # Don't try to start if it's somehow already running
@@ -349,6 +349,7 @@ def try_start_server_on_launch():
     command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
     try:
         print(f"Autostart: Attempting server launch with command: {' '.join(command)}")
+        server_start_time = time.time()
         print(f"Autostart: Working directory: {MINECRAFT_SERVER_PATH}")
         
         # Open error log file
@@ -674,7 +675,7 @@ def _start_server_process():
     Assumes lock is NOT held by caller. Manages globals directly.
     Returns True on successful launch attempt, False otherwise.
     """
-    global server_process, user_initiated_stop
+    global server_process, user_initiated_stop, server_start_time
 
     # Double-check if already running (could happen in race condition before lock)
     with server_management_lock:
@@ -692,6 +693,7 @@ def _start_server_process():
     new_process = None
     try:
         print(f"_start_server_process: Starting server with command: {' '.join(command)}")
+        server_start_time = time.time()
         print(f"_start_server_process: Working directory: {MINECRAFT_SERVER_PATH}")
         
         error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
@@ -1212,7 +1214,7 @@ def restart_server():
     flash("Server restarting...", "info")
 
     def do_restart():
-        global server_process, user_initiated_stop
+        global server_process, user_initiated_stop, server_start_time
         # Stop phase
         with server_management_lock:
             current_process = server_process
@@ -1242,6 +1244,8 @@ def restart_server():
 
         command = [JAVA_EXECUTABLE] + get_java_args() + ["-jar", str(server_jar_path), "nogui"]
         try:
+            print(f"Restart: Starting server with command: {' '.join(command)}")
+            server_start_time = time.time()
             preexec_fn = os.setsid if os.name != 'nt' else None
             error_log_path = MINECRAFT_SERVER_PATH / "server_error.log"
             error_log = open(error_log_path, "w")
